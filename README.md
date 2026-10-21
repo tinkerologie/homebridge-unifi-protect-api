@@ -1,9 +1,11 @@
 # Homebridge UniFi Protect
 
+<!-- BADGES:START -->
 [![npm](https://img.shields.io/npm/v/homebridge-unifi-protect-api/latest?label=latest)](https://www.npmjs.com/package/homebridge-unifi-protect-api)
-[![GitHub release](https://img.shields.io/github/release/ruaan-deysel/homebridge-unifi-protect-api.svg)](https://github.com/tinkerologie/homebridge-unifi-protect-api/releases)
+[![GitHub release](https://img.shields.io/github/v/release/tinkerologie/homebridge-unifi-protect-api.svg)](https://github.com/tinkerologie/homebridge-unifi-protect-api/releases)
 [![npm](https://img.shields.io/npm/dt/homebridge-unifi-protect-api)](https://www.npmjs.com/package/homebridge-unifi-protect-api)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/github/license/tinkerologie/homebridge-unifi-protect-api)](./LICENSE)
+<!-- BADGES:END -->
 
 Bring UniFi Protect cameras into Apple Home using Ubiquiti's official Integration API.
 
