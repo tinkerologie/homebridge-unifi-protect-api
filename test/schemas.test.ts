@@ -4,7 +4,10 @@ import {
   cameraSchema,
   chimeSchema,
   existingRtspsStreamsSchema,
+  fobArmControlSettingsSchema,
+  fobKeypadSettingsSchema,
   lightSchema,
+  linkStationThreadStateSchema,
   liveviewSchema,
   nvrSchema,
   relayOutputStateSchema,
@@ -13,6 +16,45 @@ import {
 const load = (n: string) => JSON.parse(readFileSync(`test/fixtures/${n}.json`, 'utf8'))
 
 describe('generated schemas parse real hardware payloads', () => {
+  it('retains the three hardware-proven optional field overrides', () => {
+    for (const original of load('cameras')) {
+      const camera = { ...original }
+      delete camera.lcdMessage
+      expect(cameraSchema.safeParse(camera).success).toBe(true)
+    }
+    for (const original of load('chimes')) {
+      const chime = structuredClone(original)
+      for (const ring of chime.ringSettings) delete ring.ringtoneId
+      expect(chimeSchema.safeParse(chime).success).toBe(true)
+    }
+    const nvr = structuredClone(load('nvrs'))
+    delete nvr.armMode.armProfileId
+    expect(nvrSchema.safeParse(nvr).success).toBe(true)
+  })
+
+  it('accepts the 7.3.70 fob controls and validates keypad volume bounds', () => {
+    expect(fobArmControlSettingsSchema.safeParse({ enabled: true, armProfileId: null, nightProfileId: null }).success).toBe(true)
+    expect(fobKeypadSettingsSchema.safeParse({ beepEnabled: true, beepVolume: 50 }).success).toBe(true)
+    expect(fobKeypadSettingsSchema.safeParse({ beepEnabled: true, beepVolume: 101 }).success).toBe(false)
+  })
+
+  it('validates the 7.3.70 thread network fields and optional network state', () => {
+    const network = {
+      status: 'ready',
+      role: 'leader',
+      networkName: 'test',
+      channel: 15,
+      panId: 'ABCD',
+      extendedPanId: '0123456789ABCDEF',
+      joinedDeviceCount: 1,
+      errorReason: null,
+      lastUpdatedAt: 1,
+    }
+    expect(linkStationThreadStateSchema.safeParse({ network: null }).success).toBe(true)
+    expect(linkStationThreadStateSchema.safeParse({ network }).success).toBe(true)
+    expect(linkStationThreadStateSchema.safeParse({ network: { ...network, panId: 'ZZZZ' } }).success).toBe(false)
+    expect(linkStationThreadStateSchema.safeParse({ network: { ...network, channel: 27 } }).success).toBe(false)
+  })
   it('parses every camera', () => {
     // .parse, not .safeParse(...).success — a failure must name the offending
     // field in CI rather than print `false !== true`.

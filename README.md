@@ -27,8 +27,16 @@ Bring UniFi Protect cameras into Apple Home using Ubiquiti's official Integratio
 - UniFi Protect with the Integration API enabled
 - ffmpeg
 
-Tested with UniFi Protect 7.2.105 (the schema and test fixtures are regenerated from
-the v7.2.105 OpenAPI spec). Hardware video encoding is recommended for multiple cameras.
+Live API checks passed with UniFi Protect 7.3.70. Redacted test fixtures were
+captured on 7.2.105; generated schemas use the official 7.3.70 OpenAPI contract.
+Hardware video encoding is recommended for multiple cameras.
+
+## Compatibility
+
+The [October 2026 compatibility audit](docs/compatibility-audit-2026-10.md) covers
+Homebridge 2, current Protect API contracts, deprecated APIs and TypeScript 7.
+The plugin retains TypeScript 6 for ESLint compiler-API compatibility; Homebridge
+runs compiled JavaScript.
 
 ## Installation
 
@@ -47,7 +55,8 @@ the plugin refuses to connect until you deliberately trust the new certificate.
 
 ## HomeKit Secure Video
 
-HKSV is disabled by default and enabled per camera. It requires a supported iCloud+ plan
+HKSV is disabled by default. Enable it per camera or through the shared default,
+which individual cameras can override. It requires a supported iCloud+ plan
 and an Apple home hub (HomePod or Apple TV). Hardware video encoding is recommended when
 recording several cameras.
 

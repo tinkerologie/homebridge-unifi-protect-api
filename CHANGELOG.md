@@ -6,12 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Prepare 1.0.4 with Protect device-event discovery, chime volume and name-limit fixes, current API schemas, strict lint and coverage gates, and the October 2026 compatibility audit. Full release notes are staged below for the version-driven release workflow.
+
+## [1.0.4]
+
+### Fixed
+
+- Chime mute/unmute now restores the previous audible level after a normal device update or discovery while muted, rather than jumping to full volume.
+- Bound accessory names to HomeKit's 64-character limit without splitting surrogate pairs, retaining the package-camera suffix and existing accessory identities.
+- Declare the missing `nodemon` development dependency while preserving the existing rebuild/restart watch workflow.
+- Device-subscription add, remove and bulk-ID frames now request a coalesced inventory refresh instead of being treated as scalar updates. Existing delayed-removal and shutdown safeguards preserve cached accessories.
+- The read-only Protect diagnostic uses the documented RTSPS GET response, including null URLs for streams not yet created, and requests native snapshots rather than forcing unsupported full HD. It also works with process environment variables when no `.env` file exists.
+
 ### Security
 
 - Development tooling only (not in the published package): an npm `override` moves `katex` to 0.18 (GHSA-238p-pmpm-9mq7, low). It reaches the lint setup through `@antfu/eslint-config` → `@eslint/markdown` → `micromark-extension-math`, whose latest release allows only `^0.16`. `npm audit` now reports no vulnerabilities.
 
 ### Changed
 
+- Refresh the vendored official Protect contract and generated schemas to 7.3.70, retaining historical hardware fixtures and guarded optional-field overrides.
+- Enforce zero-warning lint and the measured baseline coverage floors; CI uploads LCOV to Codecov with project and patch statuses.
+- Check manifest and lockfile version agreement before CI/release packaging, declare the HAP transport in plugin metadata, and prepare version 1.0.4.
+- Document the October 2026 Homebridge/Protect audit, TypeScript 7 compiler verification and the TypeScript 6 ESLint limitation. Correct development prerequisites and the unavailable Homebridge UI schema-check command.
 - Pull requests get path labels and at most one type label, `bug` or `enhancement`, from the shared tinkerologie PR labeler. Dependabot pull requests whose largest update is a patch or minor version merge automatically once the checks and commit statuses on their head commit have finished without a failure (a Codecov check that is still pending is not waited for; a Codecov failure blocks); majors, and pull requests with open review threads, stay for review.
 - Releases are split into two jobs. After the Test job's lint and tests, a read-only Package job installs dependencies, builds and packs the tarball; a separate Publish job, the only one with write access and an npm OIDC identity, publishes that tarball with lifecycle scripts disabled and creates the GitHub release. Dependency install scripts and the project's own build and test code therefore never run with publishing credentials, and the Publish job installs nothing (it checks that Node 24's bundled npm supports trusted publishing instead of upgrading npm). The Publish job checks npm again before publishing: a re-run after a partial failure skips the publish when npm already has that run's exact tarball and still creates the release; publishing runs one at a time, so a racing run that finds a different package on npm fails instead of publishing twice; and the tarball is kept for 7 days for such re-runs.
 - Release workflows hardened (least-privilege job permissions, no expressions in shell scripts, no persisted checkout credentials, no dependency caches); scheduled workflows run on Australia/Brisbane time. LICENSE now contains the complete Apache License 2.0 text.

@@ -151,6 +151,17 @@ export function sanitizingLog(log: Logging): Logging {
   return wrapped
 }
 
+function boundedName(value: string, maxLength: number): string {
+  let end = maxLength
+  // HAP counts UTF-16 code units. Do not leave a dangling high surrogate when
+  // truncation lands between an emoji's two code units.
+  const last = value.charCodeAt(end - 1)
+  const next = value.charCodeAt(end)
+  if (last >= 0xD800 && last <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF)
+    end--
+  return value.slice(0, end).trimEnd()
+}
+
 function labelFor(device: DiscoveredDevice): string {
   // `typeof`, not `?.`: `validate` degrades to the raw payload, so `name` is
   // only probably a string, and a method call on a number would throw inside a
@@ -159,7 +170,7 @@ function labelFor(device: DiscoveredDevice): string {
   // The fallback interpolates console-supplied values too, and this label
   // becomes `accessory.displayName` — which HomeKit renders, where the log
   // wrapper cannot reach.
-  return named || safeText(`Protect ${device.modelKey} ${device.id}`)
+  return boundedName(named || safeText(`Protect ${device.modelKey} ${device.id}`), 64)
 }
 
 /**
@@ -1022,7 +1033,7 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
     if (!this.caps || !this.urls)
       return this.accessories.has(uuid) ? uuid : undefined
 
-    const label = `${labelFor(device)} Package Camera`
+    const label = `${boundedName(labelFor(device), 49)} Package Camera`
     // From here on the accessory belongs in HomeKit, so the UUID is returned
     // even when wiring it up fails or shutdown lands mid-pass: the removal
     // sweep must not delete an accessory that is only temporarily unwired.
@@ -1407,7 +1418,21 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
 
   /** Frames arrive unvalidated. Nothing in here may throw back into the socket. */
   private applyDeviceUpdate(frame: unknown): void {
+    if (this.stopped)
+      return
+    const type = (frame as { type?: unknown })?.type
+    if (type !== 'update' && type !== 'add' && type !== 'remove') {
+      this.log.debug('Ignoring a device frame with a missing or unknown operation.')
+      return
+    }
     const item = (frame as { item?: unknown })?.item
+    // Membership changes and bulk updates need a full inventory. Reuse the
+    // coalesced discovery and its delayed-removal safeguards; a remove frame
+    // must never be merged into the cached device as an ordinary delta.
+    if (type === 'add' || type === 'remove' || Array.isArray((item as { id?: unknown })?.id)) {
+      this.discoverSafely()
+      return
+    }
     const modelKey = (item as { modelKey?: unknown })?.modelKey
     if (typeof modelKey !== 'string')
       return

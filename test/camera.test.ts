@@ -68,6 +68,22 @@ const subtypesOf = (a: FakeAccessory) => a.services.map(s => s.subtype).filter(B
 describe('buildCameraServices', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('keeps the existing bounded service prefixes and stable subtypes for long names', () => {
+    const device = byName('Doorbell')
+    const { accessory } = setup({
+      ...device,
+      name: 'A'.repeat(90),
+      smartDetectSettings: { ...device.smartDetectSettings, objectTypes: ['licensePlate'] },
+    })
+    for (const [type, subtype, suffix] of [
+      [S.MotionSensor, 'detect-licensePlate', 'License Plate'],
+      [S.Doorbell, 'ring', 'Doorbell'],
+      [S.Switch, 'led', 'Status LED'],
+    ] as const) {
+      expect(accessory.getServiceById(type, subtype)?.displayName).toBe(`${'A'.repeat(48)} ${suffix}`)
+    }
+  })
+
   it('builds exactly the desired set plus accessory information', () => {
     const device = byName('Doorbell')
     const { accessory } = setup(device)

@@ -102,6 +102,26 @@ describe('buildChimeServices', () => {
     expect(setVolume).toHaveBeenLastCalledWith(dingDong.id, 40)
   })
 
+  it('remembers the audible level after rebuilding from a muted console echo', async () => {
+    const { accessory, build, setVolume } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    await bulb.getCharacteristic(C.Brightness).setHandler!(40)
+    await bulb.getCharacteristic(C.On).setHandler!(false)
+    build({ ...dingDong, ringSettings: [{ cameraId: 'c', volume: 0, repeatTimes: 1 }] })
+    await bulb.getCharacteristic(C.On).setHandler!(true)
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([40, 0, 40])
+  })
+
+  it('remembers an audible level changed directly in Protect', async () => {
+    const { accessory, build, setVolume } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    build({ ...dingDong, ringSettings: [{ cameraId: 'c', volume: 70, repeatTimes: 1 }] })
+    await bulb.getCharacteristic(C.On).setHandler!(false)
+    build({ ...dingDong, ringSettings: [{ cameraId: 'c', volume: 0, repeatTimes: 1 }] })
+    await bulb.getCharacteristic(C.On).setHandler!(true)
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([0, 70])
+  })
+
   it('reverts the tile when a write fails', async () => {
     const setVolume = vi.fn(async () => {
       throw new Error('console rejected it')

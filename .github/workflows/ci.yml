@@ -30,7 +30,21 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: node scripts/check-versions.mjs
       - run: npm run lint
       - run: npm run gen:zod && git diff --exit-code src/protect/schemas.ts
-      - run: npm test
+      - if: matrix.node == '24.x'
+        run: npm run test:coverage
+      - if: matrix.node != '24.x'
+        run: npm test
       - run: npm run build
+      - name: Upload coverage to Codecov
+        if: matrix.node == '24.x'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: coverage/lcov.info
+          disable_search: true
+          token: ${{ env.CODECOV_TOKEN }}
+          fail_ci_if_error: ${{ env.CODECOV_TOKEN != '' }}

@@ -512,6 +512,39 @@ describe('uniFiProtectPlatform', () => {
     expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Protect camera cam1')
   })
 
+  it.each([64, 65, 90])('bounds a %i-character accessory name before registration', async (length) => {
+    const { platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'A'.repeat(length), modelKey: 'camera' }])
+    await platform.discover()
+    expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('A'.repeat(64))
+  })
+
+  it('bounds fallback names and avoids splitting a surrogate pair', async () => {
+    const longId = 'x'.repeat(90)
+    const { platform } = makePlatform(validConfig, [
+      { id: longId, modelKey: 'camera' },
+      { id: 'emoji', name: `${'A'.repeat(63)}😀`, modelKey: 'camera' },
+      { id: 'spaces', name: `${'A'.repeat(62)}  suffix`, modelKey: 'camera' },
+    ])
+    await platform.discover()
+    expect(platform.accessories.get(`uuid-${longId}`)?.displayName).toBe(`Protect camera ${'x'.repeat(49)}`)
+    expect(platform.accessories.get('uuid-emoji')?.displayName).toBe('A'.repeat(63))
+    expect(platform.accessories.get('uuid-spaces')?.displayName).toBe('A'.repeat(62))
+  })
+
+  it('bounds discovery and event renames while preserving the accessory identity', async () => {
+    const { api, platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Original', modelKey: 'camera' }])
+    await platform.discover()
+    const original = platform.accessories.get('uuid-cam1')
+    platform.client = makeClient([{ id: 'cam1', name: 'D'.repeat(80), modelKey: 'camera' }]) as never
+    await platform.discover()
+    expect(original?.displayName).toBe('D'.repeat(64))
+    bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1', name: 'E'.repeat(80), modelKey: 'camera' } })
+    expect(original?.displayName).toBe('E'.repeat(64))
+    expect(platform.accessories.get('uuid-cam1')).toBe(original)
+    expect(original?.UUID).toBe('uuid-cam1')
+    expect(api.registerPlatformAccessories).toHaveBeenCalledTimes(1)
+  })
+
   it('does not start the event bus when the api key is rejected', async () => {
     const { platform, bus } = makePlatform()
     const client = makeClient([])
@@ -681,11 +714,13 @@ describe('uniFiProtectPlatform', () => {
     await platform.discover()
 
     expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1', modelKey: 'camera' } })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1' } })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 42, modelKey: 'camera' } })).not.toThrow()
     expect(() => bus.emit('deviceUpdate', null)).not.toThrow()
-    expect(() => bus.emit('deviceUpdate', { item: { modelKey: 'unicorn' } })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { modelKey: 'unicorn' } })).not.toThrow()
     // Inherited Object.prototype keys must not resolve to a "schema".
     for (const key of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])
-      expect(() => bus.emit('deviceUpdate', { item: { id: 'cam1', modelKey: key } })).not.toThrow()
+      expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1', modelKey: key } })).not.toThrow()
     expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Doorbell')
   })
 
@@ -1010,6 +1045,83 @@ describe('uniFiProtectPlatform', () => {
     expect(accessory?.context.device).toMatchObject({ id: 'cam1', name: 'Front Door', modelKey: 'camera' })
   })
 
+  // Synthetic device-subscription frames exercise the operation envelope;
+  // real scalar update payloads remain covered by device-update-led.json.
+  it('discovers a newly added device from an add frame', async () => {
+    const { platform, bus } = makePlatform()
+    await platform.discover()
+    platform.client = makeClient([{ id: 'cam1', name: 'New Camera', modelKey: 'camera' }]) as never
+    bus.emit('deviceUpdate', { type: 'add', item: { id: 'cam1', modelKey: 'camera' } })
+    await vi.waitFor(() => expect(platform.accessories.has('uuid-cam1')).toBe(true))
+  })
+
+  it('confirms removal through inventory and the existing confirmation window', async () => {
+    const { api, platform, bus } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Keep', modelKey: 'camera' },
+      { id: 'cam2', name: 'Remove', modelKey: 'camera' },
+    ])
+    await platform.discover()
+    platform.confirmRemovalAfterMs = 0
+    const client = makeClient([{ id: 'cam1', name: 'Keep', modelKey: 'camera' }])
+    platform.client = client as never
+    const refresh = vi.spyOn(platform, 'discover')
+    bus.emit('deviceUpdate', { type: 'remove', item: { id: 'cam2', modelKey: 'camera', name: 'Must not merge' } })
+    // Join the event-driven pass without requesting another discovery.
+    await refresh.mock.results[0]!.value
+    expect(api.unregisterPlatformAccessories).not.toHaveBeenCalled()
+    expect(platform.accessories.get('uuid-cam2')?.displayName).toBe('Remove')
+    await platform.discover()
+    expect(api.unregisterPlatformAccessories).toHaveBeenCalledTimes(1)
+    expect(platform.accessories.has('uuid-cam2')).toBe(false)
+  })
+
+  it('refreshes inventory for a bulk update without merging the frame', async () => {
+    const { platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Original', modelKey: 'camera' }])
+    await platform.discover()
+    const refresh = vi.spyOn(platform, 'discover')
+    bus.emit('deviceUpdate', { type: 'update', item: { id: ['cam1'], modelKey: 'camera', name: 'Wrong' } })
+    await refresh.mock.results[0]!.value
+    expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Original')
+  })
+
+  it('coalesces a burst of membership changes into an in-flight and trailing pass', async () => {
+    const { platform, bus } = makePlatform()
+    await platform.discover()
+    const client = makeClient([])
+    let release!: () => void
+    client.getMetaInfo.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve({ applicationVersion: '7.3.70' })
+    }))
+    platform.client = client as never
+    bus.emit('deviceUpdate', { type: 'add', item: { id: 'cam1' } })
+    await vi.waitFor(() => expect(client.getMetaInfo).toHaveBeenCalledTimes(1))
+    for (const type of ['add', 'remove', 'add'])
+      bus.emit('deviceUpdate', { type, item: { id: 'cam2' } })
+    expect(client.getMetaInfo).toHaveBeenCalledTimes(1)
+    release()
+    await vi.waitFor(() => expect(client.getCameras).toHaveBeenCalledTimes(2))
+    expect(client.getMetaInfo).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores membership changes after shutdown', async () => {
+    const { api, platform, bus } = makePlatform()
+    await platform.discover()
+    api.emit('shutdown')
+    const refresh = vi.spyOn(platform, 'discover')
+    bus.emit('deviceUpdate', { type: 'add', item: { id: 'cam1' } })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, 'unknown'])('drops an unknown operation (%s) without changing accessories', async (type) => {
+    const { platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Original', modelKey: 'camera' }])
+    await platform.discover()
+    const refresh = vi.spyOn(platform, 'discover')
+    bus.emit('deviceUpdate', { type, item: { id: 'cam1', modelKey: 'camera', name: 'Wrong' } })
+    expect(refresh).not.toHaveBeenCalled()
+    expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Original')
+    expect(log.debug).toHaveBeenCalledWith('Ignoring a device frame with a missing or unknown operation.')
+  })
+
   // The other half of Task 5: a change made in the Protect app, not Home.app,
   // must still reach the switch. Assert the characteristic's actual value, not
   // merely that the handler ran without throwing.
@@ -1181,6 +1293,28 @@ describe('uniFiProtectPlatform', () => {
 
     const patch = (platform.client.patchChime as ReturnType<typeof vi.fn>).mock.calls[0]!
     expect((patch[1] as { ringSettings: { volume: number }[] }).ringSettings[0]!.volume).toBe(0)
+  })
+
+  it.each(['event', 'discovery'])('restores chime volume after a muted %s rebuild', async (trigger) => {
+    const chime = chimes[0]!
+    const { platform, bus } = await withCameras([chime])
+    const accessory = platform.accessories.get(`uuid-${chime.id}`) as unknown as FakeAccessory
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    await bulb.getCharacteristic(C.Brightness).setHandler!(40)
+    await bulb.getCharacteristic(C.On).setHandler!(false)
+    const rings = (chime.ringSettings as Record<string, unknown>[]).map(ring => ({ ...ring, volume: 0 }))
+    if (trigger === 'event') {
+      bus.emit('deviceUpdate', { type: 'update', item: { id: chime.id, modelKey: 'chime', ringSettings: rings } })
+    }
+    else {
+      platform.client.getChimes = vi.fn(async () => [{ ...chime, ringSettings: rings }]) as never
+      await platform.discover()
+    }
+    await bulb.getCharacteristic(C.On).setHandler!(true)
+    const patches = vi.mocked(platform.client.patchChime).mock.calls.map(([, patch]) => patch.ringSettings as Record<string, unknown>[])
+    expect(patches.map(rings => rings[0]!.volume)).toEqual([40, 0, 40])
+    for (const rings of patches)
+      expect(rings[0]).toMatchObject({ cameraId: '1caae4537220700882c792db', repeatTimes: 1 })
   })
 
   it('keeps a fresh chime write when a stale deviceUpdate echoes the old volume', async () => {
@@ -1682,6 +1816,15 @@ describe('uniFiProtectPlatform', () => {
     expect(api.publishExternalAccessories).not.toHaveBeenCalled()
     expect(registered(api.registerPlatformAccessories)).toContain(pkg)
     expect(pkg!.controllers).toHaveLength(1)
+  })
+
+  it.each([49, 50])('bounds a package name from a %i-character parent with its suffix intact', async (length) => {
+    const devices = cameras.map(device => device.id === DOORBELL ? { ...device, name: 'A'.repeat(length) } : device)
+    const { platform } = await withCameras(devices, { config: packageOn(DOORBELL) })
+    const pkg = platform.accessories.get(`uuid-${DOORBELL}-package`)!
+    expect(pkg.displayName).toBe(`${'A'.repeat(49)} Package Camera`)
+    expect(pkg.displayName).toHaveLength(64)
+    expect(pkg.UUID).toBe(`uuid-${DOORBELL}-package`)
   })
 
   it('adds none when the lens exists but the setting is off', async () => {
