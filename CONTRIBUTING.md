@@ -78,7 +78,8 @@ Before a pull request can be merged, it must satisfy all automated quality gates
 
 ### Prerequisites and Setup
 
-- Node.js (v20 or later)
+- Runtime: Node.js 22 or 24 and Homebridge 2.
+- Development: Node.js `^22.22.2 || >=24.15.0`, required by the locked ESLint tooling.
 - npm (`npm ci`)
 
 ### Validation Commands
@@ -93,12 +94,25 @@ npm test
 # Run tests with coverage
 npm run test:coverage
 
-# Lint source files
+# Lint/format checks with zero warnings, including source and test type checking
 npm run lint
 
-# Validate config schema
-npx homebridge-config-ui-x --schema-check config.schema.json
+# Parse the plugin UI schema (the UI uses custom schema extensions)
+node --input-type=module -e "import fs from 'node:fs'; JSON.parse(fs.readFileSync('config.schema.json', 'utf8'))"
 ```
+
+Coverage must meet the measured baseline thresholds in `vitest.config.ts`.
+CI uploads LCOV to Codecov on Node 24; the project status permits no coverage
+drop, and changed lines must be covered. Authenticated uploads use the repository
+or organization `CODECOV_TOKEN` secret; public fork uploads use Codecov's tokenless
+support. Install the Codecov GitHub app to receive project and patch statuses.
+The current Homebridge UI package exposes `hb-service`, not a `--schema-check`
+command. Configuration and custom UI behaviour are covered by `npm test`.
+
+`npm run watch` uses the declared development dependency `nodemon` and
+`nodemon.json` to rebuild and restart `homebridge -I -D` when source or the
+configuration schema changes. Use a separate development Homebridge storage
+directory when testing against hardware.
 
 ---
 

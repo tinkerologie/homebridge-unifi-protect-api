@@ -53,6 +53,7 @@ jobs:
         with:
           node-version: 22.x
           package-manager-cache: false
+      - run: node scripts/check-versions.mjs
       - name: Inspect release state
         id: check
         env:
@@ -66,8 +67,10 @@ jobs:
 
           node scripts/release-notes.mjs "$VERSION" "$NOTES"
 
-          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
-          printf 'notes=%s\n' "$NOTES" >> "$GITHUB_OUTPUT"
+          {
+            printf 'version=%s\n' "$VERSION"
+            printf 'notes=%s\n' "$NOTES"
+          } >> "$GITHUB_OUTPUT"
 
           NPM_METADATA="$RUNNER_TEMP/npm-metadata-$VERSION.json"
           if ! NPM_STATUS="$(curl --silent --show-error --output "$NPM_METADATA" \
@@ -116,9 +119,11 @@ jobs:
               ;;
           esac
 
-          printf 'published=%s\n' "$PUBLISHED" >> "$GITHUB_OUTPUT"
-          printf 'tagged=%s\n' "$TAGGED" >> "$GITHUB_OUTPUT"
-          printf 'released=%s\n' "$RELEASED" >> "$GITHUB_OUTPUT"
+          {
+            printf 'published=%s\n' "$PUBLISHED"
+            printf 'tagged=%s\n' "$TAGGED"
+            printf 'released=%s\n' "$RELEASED"
+          } >> "$GITHUB_OUTPUT"
           echo "::notice title=Release state::version=$VERSION published=$PUBLISHED tagged=$TAGGED released=$RELEASED"
 
           if [[ "$TAGGED" == true && "$PUBLISHED" == false ]]; then

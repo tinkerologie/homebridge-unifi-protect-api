@@ -2,7 +2,7 @@
   "name": "homebridge-unifi-protect-api",
   "displayName": "UniFi Protect (API)",
   "type": "module",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Homebridge plugin for UniFi Protect using the official Integration API. API key only — no username or password.",
   "author": "Ruaan Deysel",
   "license": "Apache-2.0",
@@ -16,6 +16,7 @@
   },
   "keywords": [
     "homebridge-plugin",
+    "supports-hap",
     "unifi",
     "unifi-protect",
     "protect",
@@ -34,7 +35,7 @@
   "scripts": {
     "build": "rimraf ./dist && tsc",
     "gen:zod": "node scripts/gen-zod.mjs",
-    "lint": "eslint . && tsc -p tsconfig.test.json",
+    "lint": "eslint . --max-warnings=0 && tsc -p tsconfig.test.json",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -55,6 +56,7 @@
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.8.0",
     "homebridge": "^2.0.0",
+    "nodemon": "^3.1.14",
     "rimraf": "^6.0.1",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"

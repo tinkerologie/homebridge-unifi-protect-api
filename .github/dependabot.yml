@@ -29,15 +29,15 @@ updates:
         update-types:
           - patch
     ignore:
-      # Homebridge itself is a peer dependency and its major version defines
+      # Homebridge is a devDependency plus engines.homebridge; its major defines
       # which Homebridge releases this plugin supports. Bumping it is a
       # deliberate compatibility decision, never an automated one.
       - dependency-name: homebridge
         update-types:
           - version-update:semver-major
-      # Pinned to the 6.x line because that is what Homebridge 2.2.1 builds
-      # against. TypeScript 7 is the native compiler rewrite; adopting it is a
-      # deliberate decision to take once Homebridge does, not a dependency bump.
+      # typescript-eslint supports >=4.8.4 <6.1.0 and needs the compiler API
+      # absent from TypeScript 7.0. Homebridge runs emitted JavaScript; compiler
+      # migration is a tooling decision, not a Homebridge runtime restriction.
       - dependency-name: typescript
         update-types:
           - version-update:semver-major

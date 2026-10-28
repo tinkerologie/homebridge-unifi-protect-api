@@ -16,6 +16,10 @@ const VOLUME_SUBTYPE = 'chime-volume'
 /** HomeKit has no chime accessory; a Lightbulb turns to full when switched on. */
 const FULL_VOLUME = 100
 
+// Services survive reconciliation; their onSet closures are replaced. Remember
+// the audible level here so a muted console echo cannot reset it to full volume.
+const lastAudible = new WeakMap<Service, number>()
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -97,20 +101,18 @@ function wireVolume(
   callbacks: ChimeCallbacks,
 ): void {
   const { Characteristic: C } = api.hap
-  // Local state, not a re-read of the build-time payload: a brightness change
-  // does not rebuild the service, so the closure's `device` is stale by the
-  // time the user toggles off then on. `lastAudible` is what "on" restores,
-  // exactly as a HomeKit Lightbulb keeps its brightness across an off/on.
-  let volume = chimeVolume(device)
-  let lastAudible = volume > 0 ? volume : FULL_VOLUME
+  // Positive console updates replace the remembered level; a muted echo keeps
+  // it. Reads at handler call time also survive replacement of these closures.
+  const volume = chimeVolume(device)
+  if (volume > 0)
+    lastAudible.set(service, volume)
   service.updateCharacteristic(C.On, volume > 0)
   service.updateCharacteristic(C.Brightness, volume)
 
   const apply = async (target: number): Promise<void> => {
     await callbacks.setVolume(String(device.id), target)
-    volume = target
     if (target > 0)
-      lastAudible = target
+      lastAudible.set(service, target)
     service.updateCharacteristic(C.On, target > 0)
     service.updateCharacteristic(C.Brightness, target)
   }
@@ -120,7 +122,7 @@ function wireVolume(
   on.onSet(async (value) => {
     // Off silences; on restores the last audible level so the toggle is never
     // inert and never forgets where the volume was.
-    const target = value ? lastAudible : 0
+    const target = value ? lastAudible.get(service) ?? FULL_VOLUME : 0
     try {
       await apply(target)
     }

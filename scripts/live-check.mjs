@@ -3,7 +3,7 @@
 // update to find out what changed before your users do.
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import https from 'node:https'
 import { isIP } from 'node:net'
 import process from 'node:process'
@@ -11,7 +11,7 @@ import { connect } from 'node:tls'
 import WebSocket from 'ws'
 
 const env = Object.fromEntries(
-  readFileSync('.env', 'utf8')
+  (existsSync('.env') ? readFileSync('.env', 'utf8') : '')
     .split('\n')
     .map(line => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/))
     .filter(Boolean)
@@ -36,8 +36,8 @@ let failed = 0
  * `checkServerIdentity` skips the hostname check ONLY (the cert is issued for
  * the UDM's hostname while we connect by IP), certificate identity is enforced.
  *
- * Trust on first use, per run: the fingerprint is printed so you can compare it
- * with the one your console shows.
+ * The console must match PROTECT_CERT_SHA256 supplied out of band before any
+ * request carrying the API key is sent.
  */
 const pinned = await new Promise((resolve, reject) => {
   const url = new URL(`https://${host}`)
@@ -135,8 +135,16 @@ await check('liveviews', '/liveviews', b => assert(Array.isArray(b), 'not an arr
 
 const id = cameras?.[0]?.id
 if (id) {
-  await check('snapshot', `/cameras/${id}/snapshot?highQuality=true`, b => assert(b.length > 1000, 'snapshot too small'))
-  await check('rtsps-stream', `/cameras/${id}/rtsps-stream?qualities=high`, b => assert(b.high?.startsWith('rtsps://'), 'no high stream'))
+  // Match the runtime's native snapshot request. Some connected cameras return
+  // 400 when forced to produce a full-HD snapshot they do not support.
+  await check('snapshot', `/cameras/${id}/snapshot`, b => assert(b.length > 1000, 'snapshot too small'))
+  await check('rtsps-stream', `/cameras/${id}/rtsps-stream`, (b) => {
+    assert(b && typeof b === 'object' && !Array.isArray(b), 'not an object')
+    for (const quality of ['high', 'medium', 'low']) {
+      const value = b[quality]
+      assert(value === null || (typeof value === 'string' && URL.canParse(value) && new URL(value).protocol === 'rtsps:'), `invalid ${quality} stream`)
+    }
+  })
 }
 
 for (const channel of ['devices', 'events']) {
