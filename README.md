@@ -30,6 +30,7 @@ Bring UniFi Protect cameras into Apple Home using Ubiquiti's official Integratio
 Live API checks passed with UniFi Protect 7.3.70. Redacted test fixtures were
 captured on 7.2.105; generated schemas use the official 7.3.70 OpenAPI contract.
 Hardware video encoding is recommended for multiple cameras.
+For Intel GPUs on Linux, see [Docker GPU setup](docs/docker-intel-gpu.md).
 
 ## Compatibility
 

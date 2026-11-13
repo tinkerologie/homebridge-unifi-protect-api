@@ -58,18 +58,46 @@ export function encoderCandidates(hwaccels: string, encoders: string): Omit<Ffmp
 }
 
 /**
- * A ~2-frame encode of a blank source. Being *listed* by `-encoders` says only
+ * A short 720p encode at a target bitrate. Being *listed* by `-encoders` says only
  * that the build was compiled with the encoder — not that this container can
  * open `/dev/dri`, that the driver is installed, or that the GPU is not already
  * exhausted. Committing to VAAPI on a listing alone makes every live view fail
- * at the moment a user presses play, with no fallback.
+ * at the moment a user presses play, with no fallback. A bitrate-free trial can
+ * also pass on a CQP-only driver that rejects live view's bitrate-controlled output.
  */
 export function viabilityArgs(caps: Omit<FfmpegCapabilities, 'path'>): string[] {
-  const source = ['-hide_banner', '-f', 'lavfi', '-i', 'nullsrc=s=64x64:d=0.1']
+  const source = [
+    '-hide_banner',
+    '-f',
+    'lavfi',
+    '-i',
+    'nullsrc=s=1280x720:r=30:d=0.1',
+  ]
+  const output = ['-b:v', '600k', '-f', 'null', '-']
   if (caps.hwaccel === 'vaapi') {
-    return [...source, '-vaapi_device', '/dev/dri/renderD128', '-vf', 'format=nv12,hwupload', '-c:v', 'h264_vaapi', '-f', 'null', '-']
+    return [
+      ...source,
+      '-vaapi_device',
+      '/dev/dri/renderD128',
+      '-vf',
+      'format=nv12,hwupload',
+      '-c:v',
+      'h264_vaapi',
+      ...output,
+    ]
   }
-  return [...source, '-init_hw_device', 'qsv=hw', '-filter_hw_device', 'hw', '-vf', 'format=nv12,hwupload=extra_hw_frames=64', '-c:v', 'h264_qsv', '-f', 'null', '-']
+  return [
+    ...source,
+    '-init_hw_device',
+    'qsv=hw',
+    '-filter_hw_device',
+    'hw',
+    '-vf',
+    'format=nv12,hwupload=extra_hw_frames=64',
+    '-c:v',
+    'h264_qsv',
+    ...output,
+  ]
 }
 
 interface ProbeOptions {

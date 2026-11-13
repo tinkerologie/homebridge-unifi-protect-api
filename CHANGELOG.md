@@ -6,9 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Test hardware encoders at 720p with a target bitrate before selecting them. Drivers that accept only bitrate-free encoding now fall back to the next encoder or software instead of failing when live view starts.
+
 ### Changed
 
 - Prepare 1.0.4 with Protect device-event discovery, chime volume and name-limit fixes, current API schemas, strict lint and coverage gates, and the October 2026 compatibility audit. Full release notes are staged below for the version-driven release workflow.
+
+### Added
+
+- Document Intel GPU access, FFmpeg and driver installation, and encoding checks for the official Homebridge Docker image.
 
 ## [1.0.4]
 
