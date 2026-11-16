@@ -125,6 +125,64 @@ describe('probeFfmpeg', () => {
     expect(run.mock.calls.filter(([, args]) => args.includes('h264_vaapi'))).toHaveLength(1)
   })
 
+  it.each(['qsv', 'vaapi'] as const)('rejects a %s driver that only accepts bitrate-free encoding', async (hwaccel) => {
+    const hw = fixture('hardware')
+    const run = vi.fn(async (_path: string, args: string[]) => {
+      if (args.includes('-hwaccels'))
+        return hwaccel
+      if (args.includes('-encoders'))
+        return hw.encoders
+      if (args.includes('-b:v'))
+        throw new Error('Driver does not support any RC mode compatible with selected options (supported modes: CQP).')
+      return ''
+    })
+
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/usr/bin/ffmpeg'],
+    })
+
+    expect(caps.encoder).toBe('libx264')
+    expect(run).toHaveBeenCalledWith(
+      '/usr/bin/ffmpeg',
+      expect.arrayContaining([
+        '-i',
+        'nullsrc=s=1280x720:r=30:d=0.1',
+        '-c:v',
+        `h264_${hwaccel}`,
+        '-b:v',
+        '600k',
+      ]),
+    )
+  })
+
+  it('tries vaapi when qsv accepts bitrate-free encoding but rejects a target bitrate', async () => {
+    const hw = fixture('hardware')
+    const run = vi.fn(async (_path: string, args: string[]) => {
+      if (args.includes('-hwaccels'))
+        return hw.hwaccels
+      if (args.includes('-encoders'))
+        return hw.encoders
+      if (args.includes('h264_qsv') && args.includes('-b:v'))
+        throw new Error('Requested bitrate control is unavailable')
+      return ''
+    })
+
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/usr/bin/ffmpeg'],
+    })
+
+    expect(caps).toEqual({
+      path: '/usr/bin/ffmpeg',
+      encoder: 'h264_vaapi',
+      hwaccel: 'vaapi',
+    })
+    expect(run.mock.calls.filter(([, args]) => args.includes('-b:v'))).toHaveLength(2)
+  })
+
   it('stops at the first encoder that works, without trialling the rest', async () => {
     const hw = fixture('hardware')
     const run = vi.fn(async (_path: string, args: string[]) =>
