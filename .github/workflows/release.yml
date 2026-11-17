@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   test:
+    timeout-minutes: 60
     name: Test
     runs-on: ubuntu-latest
     strategy:
@@ -34,6 +35,7 @@ jobs:
   # with a read-only token and no OIDC identity. The Publish job only uploads the tarball
   # built here. package.json is the version authority.
   package:
+    timeout-minutes: 60
     name: Package
     needs: test
     if: github.repository == 'tinkerologie/homebridge-unifi-protect-api'
@@ -192,6 +194,7 @@ jobs:
   # npm trusted publishing is bound to this workflow filename (release.yml) and the
   # release environment.
   publish:
+    timeout-minutes: 60
     name: Publish
     needs: package
     if: needs.package.outputs.published == 'false' || needs.package.outputs.released == 'false'

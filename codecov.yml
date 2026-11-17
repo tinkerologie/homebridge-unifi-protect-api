@@ -7,3 +7,12 @@ coverage:
     patch:
       default:
         target: 100%
+        threshold: 0%
+        informational: false
+        if_not_found: failure
+codecov:
+  require_ci_to_pass: false
+  strict_yaml_branch: main
+  notify:
+    wait_for_ci: false
+github_checks: false
