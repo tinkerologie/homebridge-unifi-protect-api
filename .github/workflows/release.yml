@@ -135,7 +135,7 @@ jobs:
 
           if [[ "$PUBLISHED" == true && "$TAGGED" == false ]]; then
             echo "::notice title=Verifying published source::Rebuilding $NAME@$VERSION before creating its tag."
-            npm install -g npm@latest
+            npm install -g npm@12.2.2
             npm ci
             npm run build
 
