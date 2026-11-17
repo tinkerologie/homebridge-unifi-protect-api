@@ -22,7 +22,9 @@ it.each(['unused', 'not-required'])('rejects a stale optional override (%s)', (m
     const result = spawnSync(process.execPath, [script], { cwd: directory, encoding: 'utf8' })
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('OPTIONAL_OVERRIDES entry ringSettings.ringtoneId')
-    expect(result.stderr).toContain(mutation === 'unused' ? 'never applied' : 'no longer required')
+    expect(result.stderr).toContain(mutation === 'unused'
+      ? 'never applied'
+      : 'no longer required')
   }
   finally {
     rmSync(directory, { recursive: true, force: true })

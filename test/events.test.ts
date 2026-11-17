@@ -62,7 +62,12 @@ class FakeSocket extends EventEmitter {
   }
 }
 
-const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+const log = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}
 
 /** Stands in for the PEM the platform pins with. Never parsed by the fake socket. */
 const TRUSTED_PEM = '-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----\n'
@@ -132,9 +137,17 @@ describe('protectEvents', () => {
 
     const devices = FakeSocket.instances[0]!
     devices.open()
-    devices.send(JSON.stringify({ type: 'update', item: { id: 'cam1', modelKey: 'camera' } }))
+    devices.send(JSON.stringify({
+      type: 'update',
+      item: { id: 'cam1', modelKey: 'camera' },
+    }))
 
-    expect(seen).toEqual([{ type: 'update', item: { id: 'cam1', modelKey: 'camera' } }])
+    expect(seen).toEqual([
+      {
+        type: 'update',
+        item: { id: 'cam1', modelKey: 'camera' },
+      },
+    ])
     events.stop()
   })
 
@@ -146,9 +159,17 @@ describe('protectEvents', () => {
 
     const eventSocket = FakeSocket.instances[1]!
     eventSocket.open()
-    eventSocket.send(Buffer.from(JSON.stringify({ type: 'add', item: { id: 'evt1' } })))
+    eventSocket.send(Buffer.from(JSON.stringify({
+      type: 'add',
+      item: { id: 'evt1' },
+    })))
 
-    expect(seen).toEqual([{ type: 'add', item: { id: 'evt1' } }])
+    expect(seen).toEqual([
+      {
+        type: 'add',
+        item: { id: 'evt1' },
+      },
+    ])
     events.stop()
   })
 
@@ -161,12 +182,20 @@ describe('protectEvents', () => {
     devices.open()
 
     devices.send('this is not json')
-    devices.send(JSON.stringify({ type: 'update', item: { id: 'cam1' } }))
+    devices.send(JSON.stringify({
+      type: 'update',
+      item: { id: 'cam1' },
+    }))
 
     expect(log.debug).toHaveBeenCalled()
     expect(devices.readyState).toBe(1)
     // The socket survived the bad frame and the next good one still arrived.
-    expect(seen).toEqual([{ type: 'update', item: { id: 'cam1' } }])
+    expect(seen).toEqual([
+      {
+        type: 'update',
+        item: { id: 'cam1' },
+      },
+    ])
     events.stop()
   })
 
@@ -179,7 +208,12 @@ describe('protectEvents', () => {
     devices.onerror?.(new Error('boom'))
     devices.fail()
 
-    const lines = [log.info, log.warn, log.error, log.debug]
+    const lines = [
+      log.info,
+      log.warn,
+      log.error,
+      log.debug,
+    ]
       .flatMap(fn => fn.mock.calls.flat())
       .join('\n')
     expect(lines).not.toContain('SECRET-KEY')
@@ -440,7 +474,9 @@ describe('protectEvents', () => {
     expect(resyncs).toEqual([])
 
     devices.send(JSON.stringify({ id: 'cam1' }))
-    expect(seen).toEqual([{ id: 'cam1' }]) // emitted once, not twice
+    expect(seen).toEqual([
+      { id: 'cam1' },
+    ]) // emitted once, not twice
     events.stop()
   })
 
@@ -567,7 +603,13 @@ describe('protectEvents over a real wss socket', () => {
 
   /** Real `ws`, real TLS — the default socketFactory, deliberately not stubbed. */
   const connectTo = (peer: Peer, consoleCert: string) =>
-    new ProtectEvents({ host: peer.host, apiKey: API_KEY, log, consoleCert, maxBackoffMs: 50 })
+    new ProtectEvents({
+      host: peer.host,
+      apiKey: API_KEY,
+      log,
+      consoleCert,
+      maxBackoffMs: 50,
+    })
 
   // The positive control: with the right certificate the key really does
   // arrive, so the assertion in the next test is an observation, not a

@@ -33,5 +33,7 @@ export function isRetryable(error: unknown): boolean {
  * has printed the API key from a request context before.
  */
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  return error instanceof Error
+    ? error.message
+    : String(error)
 }

@@ -12,7 +12,9 @@ function makeClient(existing: Record<string, string> = {}) {
 }
 
 describe('streamUrls', () => {
-  beforeEach(() => vi.useFakeTimers({ toFake: ['performance'] }))
+  beforeEach(() => vi.useFakeTimers({
+    toFake: ['performance'],
+  }))
 
   it('returns an existing url without creating one', async () => {
     const client = makeClient({ high: URL_HIGH })
@@ -60,7 +62,11 @@ describe('streamUrls', () => {
   it('evict() drops every quality of one camera and leaves the others alone', async () => {
     const client = makeClient({ high: URL_HIGH, low: URL_HIGH })
     const urls = new StreamUrls(client as never)
-    await Promise.all([urls.get('cam1', 'high'), urls.get('cam1', 'low'), urls.get('cam2', 'high')])
+    await Promise.all([
+      urls.get('cam1', 'high'),
+      urls.get('cam1', 'low'),
+      urls.get('cam2', 'high'),
+    ])
     expect(client.getRtspsStream).toHaveBeenCalledTimes(3)
 
     urls.evict('cam1')
@@ -69,7 +75,10 @@ describe('streamUrls', () => {
     await urls.get('cam2', 'high')
     expect(client.getRtspsStream).toHaveBeenCalledTimes(3)
     // Both of cam1's are gone, not just the one that happened to be first.
-    await Promise.all([urls.get('cam1', 'high'), urls.get('cam1', 'low')])
+    await Promise.all([
+      urls.get('cam1', 'high'),
+      urls.get('cam1', 'low'),
+    ])
     expect(client.getRtspsStream).toHaveBeenCalledTimes(5)
   })
 
@@ -78,7 +87,10 @@ describe('streamUrls', () => {
   it('evict() does not touch a camera whose id shares a prefix', async () => {
     const client = makeClient({ high: URL_HIGH })
     const urls = new StreamUrls(client as never)
-    await Promise.all([urls.get('cam1', 'high'), urls.get('cam10', 'high')])
+    await Promise.all([
+      urls.get('cam1', 'high'),
+      urls.get('cam10', 'high'),
+    ])
     urls.evict('cam1')
     await urls.get('cam10', 'high')
     expect(client.getRtspsStream).toHaveBeenCalledTimes(2)
@@ -105,7 +117,11 @@ describe('streamUrls', () => {
       createRtspsStream: vi.fn(async () => ({})),
     }
     const urls = new StreamUrls(client as never)
-    await Promise.all([urls.get('cam1', 'high'), urls.get('cam1', 'low'), urls.get('cam2', 'high')])
+    await Promise.all([
+      urls.get('cam1', 'high'),
+      urls.get('cam1', 'low'),
+      urls.get('cam2', 'high'),
+    ])
     expect(client.getRtspsStream).toHaveBeenCalledTimes(3)
   })
 
@@ -216,7 +232,9 @@ describe('streamUrls', () => {
       getRtspsStream: vi.fn(async () => {
         // Exactly the shape the REST client produces: the credential hides in
         // `cause`, which is where util.inspect (what log.error uses) finds it.
-        throw Object.assign(new Error('403 Forbidden'), { cause: { apiKey: 'SENTINEL-TOKEN' } })
+        throw Object.assign(new Error('403 Forbidden'), {
+          cause: { apiKey: 'SENTINEL-TOKEN' },
+        })
       }),
       createRtspsStream: vi.fn(async () => ({})),
     }

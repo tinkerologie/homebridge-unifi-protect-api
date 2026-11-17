@@ -39,7 +39,12 @@ export async function startUi(doc, homebridge, win = globalThis) {
   // pane element renderTabs created for it - the DOM nodes themselves are
   // relocated (appendChild moves, it does not clone), so every id below
   // still resolves exactly once.
-  const { tablist, panes } = renderTabs(doc, ['Connection', 'Defaults', 'Devices', 'Help'])
+  const { tablist, panes } = renderTabs(doc, [
+    'Connection',
+    'Defaults',
+    'Devices',
+    'Help',
+  ])
   const [connectionPane, defaultsPane, devicesPane, helpPane] = panes
   const tabRoot = doc.getElementById('tab-root')
   tabRoot.before(tablist, ...panes)
@@ -103,7 +108,11 @@ export async function startUi(doc, homebridge, win = globalThis) {
     keyEl.value = config.apiKey
     // renderTrust is a hoisted function declaration; this runs before its
     // source position deliberately, so the panel has one owner.
-    renderTrust(config.consoleCert ? [{ text: PINNED_NOTICE }] : [])
+    renderTrust(config.consoleCert
+      ? [
+          { text: PINNED_NOTICE },
+        ]
+      : [])
   }
   syncConnection()
 
@@ -238,7 +247,10 @@ export async function startUi(doc, homebridge, win = globalThis) {
   // could change. Written into `config.defaults`, which is what `defaultFor`
   // reads, so flipping one here moves every device that has not overridden it.
   const setDefault = async (key, value, resync) => {
-    config = { ...config, defaults: { ...config.defaults, [key]: value } }
+    config = {
+      ...config,
+      defaults: { ...config.defaults, [key]: value },
+    }
     await save(resync)
   }
 
@@ -443,8 +455,11 @@ export async function startUi(doc, homebridge, win = globalThis) {
         // actually landed - `save()` rolls `config` back otherwise, and a
         // "now trusted" message over a config that no longer holds the
         // certificate is the same lie the toggles used to tell.
-        if (await save())
-          renderTrust([{ text: 'The new certificate is now trusted. Restart Homebridge, then press Test Connection.' }])
+        if (await save()) {
+          renderTrust([
+            { text: 'The new certificate is now trusted. Restart Homebridge, then press Test Connection.' },
+          ])
+        }
       })
       card.append(button)
     }
@@ -461,7 +476,11 @@ export async function startUi(doc, homebridge, win = globalThis) {
     statusEl.textContent = 'Checking the console\'s certificate…'
     // The key is only ever sent to the local server-side handler over the
     // homebridge IPC channel - never logged, never echoed back into the DOM.
-    config = { ...config, host: hostEl.value.trim(), apiKey: keyEl.value.trim() }
+    config = {
+      ...config,
+      host: hostEl.value.trim(),
+      apiKey: keyEl.value.trim(),
+    }
 
     // Certificate first, credential second: nothing below sends the API key
     // until the certificate on the wire is the one this install trusts.

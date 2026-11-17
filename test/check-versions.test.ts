@@ -15,7 +15,12 @@ it.each([
   const directory = mkdtempSync(join(tmpdir(), 'protect-versions-'))
   try {
     writeFileSync(join(directory, 'package.json'), JSON.stringify({ version: '1.0.4' }))
-    writeFileSync(join(directory, 'package-lock.json'), JSON.stringify({ version: lockVersion, packages: { '': { version: rootVersion } } }))
+    writeFileSync(join(directory, 'package-lock.json'), JSON.stringify({
+      version: lockVersion,
+      packages: {
+        '': { version: rootVersion },
+      },
+    }))
     const result = spawnSync(process.execPath, [script], { cwd: directory, encoding: 'utf8' })
     expect(result.status).toBe(status)
     expect(status ? result.stderr : result.stdout).toContain(status ? 'must agree' : '1.0.4')

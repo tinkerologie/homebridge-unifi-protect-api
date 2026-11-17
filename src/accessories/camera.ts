@@ -26,7 +26,10 @@ const AUDIO_SERVICE = new Set(['audio-alrmSmoke', 'audio-alrmCmonx'])
  * services do not have to register anything here to avoid being torn down and
  * rebuilt — which would kill an active stream — on every discovery.
  */
-const OWNED_SUBTYPES = new Set([...Object.keys(SUBTYPE_LABELS), 'led'])
+const OWNED_SUBTYPES = new Set([
+  ...Object.keys(SUBTYPE_LABELS),
+  'led',
+])
 
 export interface CameraCallbacks {
   setLed: (deviceId: string, on: boolean) => Promise<void>
@@ -37,7 +40,9 @@ export interface CameraCallbacks {
  * type says exists may be absent at runtime. Every read here tolerates that.
  */
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+  return Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === 'string')
+    : []
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -45,7 +50,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function record(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {}
+  return isRecord(value)
+    ? value
+    : {}
 }
 
 /**
@@ -125,8 +132,12 @@ function serviceTypeFor(api: API, subtype: string) {
  * on every discovery. 48 leaves room for the longest suffix, " License Plate".
  */
 function deviceLabel(device: Record<string, unknown>): string {
-  const name = typeof device.name === 'string' ? device.name.trim() : ''
-  return name ? name.slice(0, 48) : 'Camera'
+  const name = typeof device.name === 'string'
+    ? device.name.trim()
+    : ''
+  return name
+    ? name.slice(0, 48)
+    : 'Camera'
 }
 
 export function buildCameraServices(
@@ -146,15 +157,21 @@ export function buildCameraServices(
   // make HomeKit treat this as a different accessory entirely.
   if (understood) {
     info.setCharacteristic(C.Manufacturer, 'Ubiquiti')
-      .setCharacteristic(C.Model, typeof device.modelKey === 'string' ? device.modelKey : 'camera')
-      .setCharacteristic(C.SerialNumber, typeof device.mac === 'string' ? device.mac : String(device.id ?? 'unknown'))
+      .setCharacteristic(C.Model, typeof device.modelKey === 'string'
+        ? device.modelKey
+        : 'camera')
+      .setCharacteristic(C.SerialNumber, typeof device.mac === 'string'
+        ? device.mac
+        : String(device.id ?? 'unknown'))
   }
 
   const desired = desiredSubtypes(device)
 
   for (const subtype of desired) {
     const type = serviceTypeFor(api, subtype)
-    const name = subtype === 'led' ? `${label} Status LED` : `${label} ${SUBTYPE_LABELS[subtype]}`
+    const name = subtype === 'led'
+      ? `${label} Status LED`
+      : `${label} ${SUBTYPE_LABELS[subtype]}`
     let service = accessory.getServiceById(type, subtype)
     if (!service) {
       // The name is written once, here, and never again — writing it on every

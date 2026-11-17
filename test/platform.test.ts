@@ -19,7 +19,13 @@ import { StreamUrls } from '../src/protect/stream.js'
 import { C, FakeAccessory, FakeDoorbellController, hap, S } from './fake-hap.js'
 import { makeSelfSigned } from './support/tls.js'
 
-const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), success: vi.fn() }
+const log = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  success: vi.fn(),
+}
 
 /** The five real cameras Task 0 captured off the live console. */
 const cameras = JSON.parse(readFileSync('test/fixtures/cameras.json', 'utf8')) as Record<string, unknown>[]
@@ -53,7 +59,12 @@ class FakePlatformAccessory extends FakeAccessory {
 function makeApi() {
   const api = new EventEmitter() as never as Record<string, unknown> & EventEmitter
   Object.assign(api, {
-    hap: { ...hap, uuid: { generate: (s: string) => `uuid-${s}` } },
+    hap: {
+      ...hap,
+      uuid: {
+        generate: (s: string) => `uuid-${s}`,
+      },
+    },
     platformAccessory: FakePlatformAccessory,
     registerPlatformAccessories: vi.fn(),
     unregisterPlatformAccessories: vi.fn(),
@@ -63,7 +74,12 @@ function makeApi() {
   return api
 }
 
-const validConfig = { platform: 'UniFiProtect', name: 'UniFi Protect', host: '10.0.0.1', apiKey: 'k' }
+const validConfig = {
+  platform: 'UniFiProtect',
+  name: 'UniFi Protect',
+  host: '10.0.0.1',
+  apiKey: 'k',
+}
 
 /**
  * Routes by `modelKey` rather than hardcoding `[]` for everything but cameras —
@@ -93,7 +109,12 @@ function makeClient(devices: unknown[]) {
   }
 }
 
-const events = () => Object.assign(new EventEmitter(), { start: vi.fn(), stop: vi.fn() })
+function events() {
+  return Object.assign(new EventEmitter(), {
+    start: vi.fn(),
+    stop: vi.fn(),
+  })
+}
 
 /**
  * PEMs the fake cert reader hands back. Real ones — `fingerprintOf` hashes the
@@ -133,7 +154,10 @@ function makePlatform(config: unknown = validConfig, cameras: unknown[] = [], pr
   platform.runFfmpeg = run
   // Stubbed everywhere: nothing in this suite may open a TLS socket to the
   // fictional 10.0.0.1, and a real attempt hangs the run until it times out.
-  platform.readConsoleCert = vi.fn(async () => ({ pem: presented, fingerprint: fingerprintOf(presented) }))
+  platform.readConsoleCert = vi.fn(async () => ({
+    pem: presented,
+    fingerprint: fingerprintOf(presented),
+  }))
   return { api, platform, bus, probe, run }
 }
 
@@ -153,7 +177,9 @@ describe('uniFiProtectPlatform', () => {
   // this, deleting the `didFinishLaunching` subscription leaves every test green
   // while the plugin discovers nothing at all on a real boot.
   it('discovers when Homebridge emits didFinishLaunching', async () => {
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
 
     api.emit('didFinishLaunching')
 
@@ -163,7 +189,9 @@ describe('uniFiProtectPlatform', () => {
   // discoverSafely's catch is the only thing between a throwing discovery and a
   // Node >= 15 unhandled rejection taking all of Homebridge down with it.
   it('swallows a rejecting discovery and schedules a retry instead of dying', async () => {
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
     api.registerPlatformAccessories = vi.fn(() => {
@@ -189,7 +217,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('registers one bridged accessory per exposed device', async () => {
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
 
     await platform.discover()
 
@@ -198,8 +228,15 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('does not register a device the user excluded', async () => {
-    const config = { ...validConfig, devices: { cam1: { expose: false } } }
-    const { api, platform } = makePlatform(config, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const config = {
+      ...validConfig,
+      devices: {
+        cam1: { expose: false },
+      },
+    }
+    const { api, platform } = makePlatform(config, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
 
     await platform.discover()
 
@@ -237,7 +274,11 @@ describe('uniFiProtectPlatform', () => {
     // Trailing space, not a typo: camera.ts keeps the BEL that terminated the
     // OSC sequence, and the wrapper turns it into a space mid-message.
     expect(services).toEqual([`Added motion service to "${label} ".`])
-    const everything = [...log.info.mock.calls, ...log.debug.mock.calls, ...log.warn.mock.calls].flat()
+    const everything = [
+      ...log.info.mock.calls,
+      ...log.debug.mock.calls,
+      ...log.warn.mock.calls,
+    ].flat()
     for (const line of everything.filter(v => typeof v === 'string'))
       // eslint-disable-next-line no-control-regex -- control characters are the point.
       expect(line).not.toMatch(/[\u0000-\u001F\u007F-\u009F\u2028\u2029\u202A-\u202E\u2066-\u2069]/)
@@ -274,7 +315,10 @@ describe('uniFiProtectPlatform', () => {
   it('forgets a removed camera cached stream urls', async () => {
     const evict = vi.spyOn(StreamUrls.prototype, 'evict')
     const survivor = { id: 'cam2', name: 'Garage', modelKey: 'camera' }
-    const { platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }, survivor])
+    const { platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+      survivor,
+    ])
     platform.confirmRemovalAfterMs = 0
     await platform.discover()
     platform.client = makeClient([survivor]) as never
@@ -290,7 +334,10 @@ describe('uniFiProtectPlatform', () => {
 
   it('unregisters a device that vanished, but only once the confirmation window has passed', async () => {
     const survivor = { id: 'cam2', name: 'Garage', modelKey: 'camera' }
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }, survivor])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+      survivor,
+    ])
     // A zero window still requires a *later* discovery — the first sighting of
     // a missing device only records when it went missing. Shortened rather than
     // faked with timers so the test reads as "no waiting", not "an hour later".
@@ -362,10 +409,20 @@ describe('uniFiProtectPlatform', () => {
   // step satisfies the window instantly and one partial inventory confirms
   // itself. Fails against `Date.now()`, for precisely that reason.
   it('is not fooled by an NTP step jumping the wall clock forward', async () => {
-    vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] })
+    vi.useFakeTimers({
+      toFake: [
+        'Date',
+        'performance',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    })
     try {
       const survivor = { id: 'cam2', name: 'Garage', modelKey: 'camera' }
-      const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }, survivor])
+      const { api, platform } = makePlatform(validConfig, [
+        { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+        survivor,
+      ])
       await platform.discover()
 
       platform.client = makeClient([survivor]) as never
@@ -389,10 +446,15 @@ describe('uniFiProtectPlatform', () => {
   // `performance.now()` by default, and the gate reads a monotonic clock, so
   // `vi.setSystemTime` would move nothing and this test would pass vacuously.
   it('unregisters once a device has stayed missing past the confirmation window', async () => {
-    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] })
+    vi.useFakeTimers({
+      toFake: ['performance', 'setTimeout', 'clearTimeout'],
+    })
     try {
       const survivor = { id: 'cam2', name: 'Garage', modelKey: 'camera' }
-      const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }, survivor])
+      const { api, platform } = makePlatform(validConfig, [
+        { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+        survivor,
+      ])
       await platform.discover()
 
       platform.client = makeClient([survivor]) as never
@@ -421,8 +483,16 @@ describe('uniFiProtectPlatform', () => {
 
     await platform.discover()
 
-    expect([...platform.accessories.keys()].sort()).toEqual(
-      ['uuid-cam1', 'uuid-chime1', 'uuid-light1', 'uuid-sensor1', 'uuid-viewer1'],
+    expect([
+      ...platform.accessories.keys(),
+    ].sort()).toEqual(
+      [
+        'uuid-cam1',
+        'uuid-chime1',
+        'uuid-light1',
+        'uuid-sensor1',
+        'uuid-viewer1',
+      ],
     )
   })
 
@@ -432,7 +502,12 @@ describe('uniFiProtectPlatform', () => {
     await platform.discover()
     expect(api.registerPlatformAccessories).toHaveBeenCalledTimes(1)
 
-    const excluded = makePlatform({ ...validConfig, devices: { cam1: { expose: false } } }, [device])
+    const excluded = makePlatform({
+      ...validConfig,
+      devices: {
+        cam1: { expose: false },
+      },
+    }, [device])
     for (const [uuid, accessory] of platform.accessories)
       excluded.platform.configureAccessory({ UUID: uuid, displayName: accessory.displayName, context: {} } as never)
     await excluded.platform.discover()
@@ -444,7 +519,9 @@ describe('uniFiProtectPlatform', () => {
   // C1: a discovery that "succeeds" with an empty inventory must never be
   // treated as authoritative — that path deleted every accessory irreversibly.
   it('keeps accessories when a successful discovery returns nothing at all', async () => {
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     await platform.discover()
     expect(platform.accessories.size).toBe(1)
 
@@ -457,10 +534,14 @@ describe('uniFiProtectPlatform', () => {
 
   // N3: an array of id-less objects is as broken a response as an empty one.
   it('keeps accessories when every discovered device lacks an id', async () => {
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     await platform.discover()
 
-    platform.client = makeClient([{ name: 'Doorbell', modelKey: 'camera' }]) as never
+    platform.client = makeClient([
+      { name: 'Doorbell', modelKey: 'camera' },
+    ]) as never
     await platform.discover()
 
     expect(api.unregisterPlatformAccessories).not.toHaveBeenCalled()
@@ -468,7 +549,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('keeps accessories when the console is unreachable', async () => {
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     await platform.discover()
 
     const failing = makeClient([])
@@ -482,10 +565,14 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('follows a rename without re-registering', async () => {
-    const { api, platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { api, platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     await platform.discover()
 
-    platform.client = makeClient([{ id: 'cam1', name: 'Front Door', modelKey: 'camera' }]) as never
+    platform.client = makeClient([
+      { id: 'cam1', name: 'Front Door', modelKey: 'camera' },
+    ]) as never
     await platform.discover()
 
     expect(api.registerPlatformAccessories).toHaveBeenCalledTimes(1)
@@ -506,14 +593,22 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('names a device with no name after its id', async () => {
-    const { platform } = makePlatform(validConfig, [{ id: 'cam1', name: null, modelKey: 'camera' }])
+    const { platform } = makePlatform(validConfig, [
+      { id: 'cam1', name: null, modelKey: 'camera' },
+    ])
     await platform.discover()
 
     expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Protect camera cam1')
   })
 
   it.each([64, 65, 90])('bounds a %i-character accessory name before registration', async (length) => {
-    const { platform } = makePlatform(validConfig, [{ id: 'cam1', name: 'A'.repeat(length), modelKey: 'camera' }])
+    const { platform } = makePlatform(validConfig, [
+      {
+        id: 'cam1',
+        name: 'A'.repeat(length),
+        modelKey: 'camera',
+      },
+    ])
     await platform.discover()
     expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('A'.repeat(64))
   })
@@ -532,13 +627,28 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('bounds discovery and event renames while preserving the accessory identity', async () => {
-    const { api, platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Original', modelKey: 'camera' }])
+    const { api, platform, bus } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Original', modelKey: 'camera' },
+    ])
     await platform.discover()
     const original = platform.accessories.get('uuid-cam1')
-    platform.client = makeClient([{ id: 'cam1', name: 'D'.repeat(80), modelKey: 'camera' }]) as never
+    platform.client = makeClient([
+      {
+        id: 'cam1',
+        name: 'D'.repeat(80),
+        modelKey: 'camera',
+      },
+    ]) as never
     await platform.discover()
     expect(original?.displayName).toBe('D'.repeat(64))
-    bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1', name: 'E'.repeat(80), modelKey: 'camera' } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: {
+        id: 'cam1',
+        name: 'E'.repeat(80),
+        modelKey: 'camera',
+      },
+    })
     expect(original?.displayName).toBe('E'.repeat(64))
     expect(platform.accessories.get('uuid-cam1')).toBe(original)
     expect(original?.UUID).toBe('uuid-cam1')
@@ -568,10 +678,14 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('runs a fresh discovery when the bus asks for a resync', async () => {
-    const { platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { platform, bus } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     await platform.discover()
 
-    const second = makeClient([{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const second = makeClient([
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     platform.client = second as never
 
     // The emit alone must drive it — no manual discover() call here, or the
@@ -586,7 +700,11 @@ describe('uniFiProtectPlatform', () => {
     const client = makeClient([])
     platform.client = client as never
 
-    await Promise.all([platform.discover(), platform.discover(), platform.discover()])
+    await Promise.all([
+      platform.discover(),
+      platform.discover(),
+      platform.discover(),
+    ])
 
     // One run for the first caller, one trailing pass covering the other two.
     expect(client.getMetaInfo).toHaveBeenCalledTimes(2)
@@ -660,7 +778,9 @@ describe('uniFiProtectPlatform', () => {
   it('does not register or restart the bus when a discovery succeeds after shutdown', async () => {
     const { api, platform, bus } = makePlatform()
     let resolveMeta = (_: { applicationVersion: string }): void => {}
-    const slow = makeClient([{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const slow = makeClient([
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     slow.getMetaInfo = vi.fn(() => new Promise<{ applicationVersion: string }>((resolve) => {
       resolveMeta = resolve
     }))
@@ -710,17 +830,41 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('survives a malformed device update frame', async () => {
-    const { platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { platform, bus } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     await platform.discover()
 
-    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1', modelKey: 'camera' } })).not.toThrow()
-    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1' } })).not.toThrow()
-    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 42, modelKey: 'camera' } })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: 'cam1', modelKey: 'camera' },
+    })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: 'cam1' },
+    })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: 42, modelKey: 'camera' },
+    })).not.toThrow()
     expect(() => bus.emit('deviceUpdate', null)).not.toThrow()
-    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { modelKey: 'unicorn' } })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { modelKey: 'unicorn' },
+    })).not.toThrow()
     // Inherited Object.prototype keys must not resolve to a "schema".
-    for (const key of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])
-      expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1', modelKey: key } })).not.toThrow()
+    for (const key of [
+      'constructor',
+      'toString',
+      'valueOf',
+      'hasOwnProperty',
+      '__proto__',
+    ]) {
+      expect(() => bus.emit('deviceUpdate', {
+        type: 'update',
+        item: { id: 'cam1', modelKey: key },
+      })).not.toThrow()
+    }
     expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Doorbell')
   })
 
@@ -747,8 +891,16 @@ describe('uniFiProtectPlatform', () => {
     const sensor = (id: string, subtype: string) =>
       (ctx.platform.accessories.get(`uuid-${id}`) as unknown as FakeAccessory).getServiceById(S.MotionSensor, subtype)
     const detected = (id: string, subtype: string) => sensor(id, subtype)?.valueOf_(C.MotionDetected)
-    const accessories = [...ctx.platform.accessories.values()] as unknown as FakePlatformAccessory[]
-    return { ...ctx, sensor, detected, accessories, log }
+    const accessories = [
+      ...ctx.platform.accessories.values(),
+    ] as unknown as FakePlatformAccessory[]
+    return {
+      ...ctx,
+      sensor,
+      detected,
+      accessories,
+      log,
+    }
   }
 
   /** The accessory the 2a `ring` Doorbell service belongs to. */
@@ -767,7 +919,15 @@ describe('uniFiProtectPlatform', () => {
 
     const doorbell = platform.accessories.get(`uuid-${DOORBELL}`) as unknown as FakeAccessory
     expect(sensorSubtypes(doorbell)).toEqual(
-      ['detect-animal', 'detect-package', 'detect-person', 'detect-vehicle', 'led', 'motion', 'ring'],
+      [
+        'detect-animal',
+        'detect-package',
+        'detect-person',
+        'detect-vehicle',
+        'led',
+        'motion',
+        'ring',
+      ],
     )
     // Sidegate reports hasLedStatus: false and no speaker; on the capturing
     // console it had only person detection enabled.
@@ -781,7 +941,15 @@ describe('uniFiProtectPlatform', () => {
     expect(driveway.getServiceById(S.MotionSensor, 'detect-vehicle')).toBeDefined()
 
     platform.client = makeClient(cameras.map(c =>
-      c.id === DRIVEWAY ? { ...c, smartDetectSettings: { objectTypes: ['person'], audioTypes: [] } } : c,
+      c.id === DRIVEWAY
+        ? {
+            ...c,
+            smartDetectSettings: {
+              objectTypes: ['person'],
+              audioTypes: [],
+            },
+          }
+        : c,
     )) as never
     await platform.discover()
 
@@ -900,7 +1068,10 @@ describe('uniFiProtectPlatform', () => {
       // Discovery's own logging is not what this test is about.
       vi.clearAllMocks()
 
-      expect(() => bus.emit('protectEvent', { ...(start as object), item: { ...(start as { item: object }).item, device: 'nope' } })).not.toThrow()
+      expect(() => bus.emit('protectEvent', {
+        ...(start as object),
+        item: { ...(start as { item: object }).item, device: 'nope' },
+      })).not.toThrow()
 
       expect(detected(DOORBELL, 'motion')).toBeFalsy()
       // A chime or an unadopted device emits these constantly — no log spam.
@@ -923,11 +1094,27 @@ describe('uniFiProtectPlatform', () => {
       undefined,
       'nonsense',
       [],
-      { item: { type: 5 } },
+      {
+        item: { type: 5 },
+      },
       { item: null },
-      { type: 'add', item: { id: 1, device: DOORBELL, type: 'motion' } },
-      { type: 'add', item: { id: 'e', device: DOORBELL, type: 'smartDetectZone', smartDetectTypes: 'person' } },
-      { type: 'add', item: { id: 'e', device: DOORBELL, type: '__proto__' } },
+      {
+        type: 'add',
+        item: { id: 1, device: DOORBELL, type: 'motion' },
+      },
+      {
+        type: 'add',
+        item: {
+          id: 'e',
+          device: DOORBELL,
+          type: 'smartDetectZone',
+          smartDetectTypes: 'person',
+        },
+      },
+      {
+        type: 'add',
+        item: { id: 'e', device: DOORBELL, type: '__proto__' },
+      },
     ])
       expect(() => bus.emit('protectEvent', frame), JSON.stringify(frame ?? null)).not.toThrow()
 
@@ -976,7 +1163,9 @@ describe('uniFiProtectPlatform', () => {
     try {
       const { platform, bus } = await withCameras()
       const doorbell = platform.accessories.get(`uuid-${DOORBELL}`) as unknown as FakeAccessory
-      const boom = Object.assign(new Error('HAP exploded'), { cause: { apiKey: 'sk-live-DO-NOT-LOG' } })
+      const boom = Object.assign(new Error('HAP exploded'), {
+        cause: { apiKey: 'sk-live-DO-NOT-LOG' },
+      })
       doorbell.getServiceById = () => {
         throw boom
       }
@@ -994,7 +1183,10 @@ describe('uniFiProtectPlatform', () => {
 
       // Every logged argument a string, and the credential on `cause` nowhere
       // near the log — log.error(err) runs util.inspect, which walks it.
-      for (const call of [...log.warn.mock.calls, ...log.error.mock.calls]) {
+      for (const call of [
+        ...log.warn.mock.calls,
+        ...log.error.mock.calls,
+      ]) {
         for (const arg of call)
           expect(typeof arg).toBe('string')
         expect(call.join(' ')).not.toContain('sk-live-DO-NOT-LOG')
@@ -1035,10 +1227,15 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('applies a rename delivered as a partial device update frame', async () => {
-    const { platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Doorbell', modelKey: 'camera' }])
+    const { platform, bus } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Doorbell', modelKey: 'camera' },
+    ])
     await platform.discover()
 
-    bus.emit('deviceUpdate', { type: 'update', item: { id: 'cam1', modelKey: 'camera', name: 'Front Door' } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: 'cam1', modelKey: 'camera', name: 'Front Door' },
+    })
 
     const accessory = platform.accessories.get('uuid-cam1')
     expect(accessory?.displayName).toBe('Front Door')
@@ -1050,8 +1247,13 @@ describe('uniFiProtectPlatform', () => {
   it('discovers a newly added device from an add frame', async () => {
     const { platform, bus } = makePlatform()
     await platform.discover()
-    platform.client = makeClient([{ id: 'cam1', name: 'New Camera', modelKey: 'camera' }]) as never
-    bus.emit('deviceUpdate', { type: 'add', item: { id: 'cam1', modelKey: 'camera' } })
+    platform.client = makeClient([
+      { id: 'cam1', name: 'New Camera', modelKey: 'camera' },
+    ]) as never
+    bus.emit('deviceUpdate', {
+      type: 'add',
+      item: { id: 'cam1', modelKey: 'camera' },
+    })
     await vi.waitFor(() => expect(platform.accessories.has('uuid-cam1')).toBe(true))
   })
 
@@ -1062,10 +1264,15 @@ describe('uniFiProtectPlatform', () => {
     ])
     await platform.discover()
     platform.confirmRemovalAfterMs = 0
-    const client = makeClient([{ id: 'cam1', name: 'Keep', modelKey: 'camera' }])
+    const client = makeClient([
+      { id: 'cam1', name: 'Keep', modelKey: 'camera' },
+    ])
     platform.client = client as never
     const refresh = vi.spyOn(platform, 'discover')
-    bus.emit('deviceUpdate', { type: 'remove', item: { id: 'cam2', modelKey: 'camera', name: 'Must not merge' } })
+    bus.emit('deviceUpdate', {
+      type: 'remove',
+      item: { id: 'cam2', modelKey: 'camera', name: 'Must not merge' },
+    })
     // Join the event-driven pass without requesting another discovery.
     await refresh.mock.results[0]!.value
     expect(api.unregisterPlatformAccessories).not.toHaveBeenCalled()
@@ -1076,10 +1283,19 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('refreshes inventory for a bulk update without merging the frame', async () => {
-    const { platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Original', modelKey: 'camera' }])
+    const { platform, bus } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Original', modelKey: 'camera' },
+    ])
     await platform.discover()
     const refresh = vi.spyOn(platform, 'discover')
-    bus.emit('deviceUpdate', { type: 'update', item: { id: ['cam1'], modelKey: 'camera', name: 'Wrong' } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: {
+        id: ['cam1'],
+        modelKey: 'camera',
+        name: 'Wrong',
+      },
+    })
     await refresh.mock.results[0]!.value
     expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Original')
   })
@@ -1093,10 +1309,17 @@ describe('uniFiProtectPlatform', () => {
       release = () => resolve({ applicationVersion: '7.3.70' })
     }))
     platform.client = client as never
-    bus.emit('deviceUpdate', { type: 'add', item: { id: 'cam1' } })
+    bus.emit('deviceUpdate', {
+      type: 'add',
+      item: { id: 'cam1' },
+    })
     await vi.waitFor(() => expect(client.getMetaInfo).toHaveBeenCalledTimes(1))
-    for (const type of ['add', 'remove', 'add'])
-      bus.emit('deviceUpdate', { type, item: { id: 'cam2' } })
+    for (const type of ['add', 'remove', 'add']) {
+      bus.emit('deviceUpdate', {
+        type,
+        item: { id: 'cam2' },
+      })
+    }
     expect(client.getMetaInfo).toHaveBeenCalledTimes(1)
     release()
     await vi.waitFor(() => expect(client.getCameras).toHaveBeenCalledTimes(2))
@@ -1108,15 +1331,23 @@ describe('uniFiProtectPlatform', () => {
     await platform.discover()
     api.emit('shutdown')
     const refresh = vi.spyOn(platform, 'discover')
-    bus.emit('deviceUpdate', { type: 'add', item: { id: 'cam1' } })
+    bus.emit('deviceUpdate', {
+      type: 'add',
+      item: { id: 'cam1' },
+    })
     expect(refresh).not.toHaveBeenCalled()
   })
 
   it.each([undefined, 'unknown'])('drops an unknown operation (%s) without changing accessories', async (type) => {
-    const { platform, bus } = makePlatform(validConfig, [{ id: 'cam1', name: 'Original', modelKey: 'camera' }])
+    const { platform, bus } = makePlatform(validConfig, [
+      { id: 'cam1', name: 'Original', modelKey: 'camera' },
+    ])
     await platform.discover()
     const refresh = vi.spyOn(platform, 'discover')
-    bus.emit('deviceUpdate', { type, item: { id: 'cam1', modelKey: 'camera', name: 'Wrong' } })
+    bus.emit('deviceUpdate', {
+      type,
+      item: { id: 'cam1', modelKey: 'camera', name: 'Wrong' },
+    })
     expect(refresh).not.toHaveBeenCalled()
     expect(platform.accessories.get('uuid-cam1')?.displayName).toBe('Original')
     expect(log.debug).toHaveBeenCalledWith('Ignoring a device frame with a missing or unknown operation.')
@@ -1167,7 +1398,16 @@ describe('uniFiProtectPlatform', () => {
     expect(before.map(s => s.subtype).filter(Boolean)).toContain('detect-vehicle')
 
     // Real shape: only the changed field, no audioTypes alongside it.
-    bus.emit('deviceUpdate', { type: 'update', item: { id: DOORBELL, modelKey: 'camera', smartDetectSettings: { objectTypes: ['person'] } } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: {
+        id: DOORBELL,
+        modelKey: 'camera',
+        smartDetectSettings: {
+          objectTypes: ['person'],
+        },
+      },
+    })
 
     expect(doorbell.services).toEqual(before)
     // Rejected upstream by the schema, not silently accepted and floored late.
@@ -1184,7 +1424,9 @@ describe('uniFiProtectPlatform', () => {
 
     await on.setHandler!(true)
 
-    expect(platform.client.patchCamera).toHaveBeenCalledWith(DOORBELL, { ledSettings: { isEnabled: true } })
+    expect(platform.client.patchCamera).toHaveBeenCalledWith(DOORBELL, {
+      ledSettings: { isEnabled: true },
+    })
   })
 
   // A Protect Light is a different modelKey down a different reconcile branch,
@@ -1219,7 +1461,9 @@ describe('uniFiProtectPlatform', () => {
 
     await brightness.setHandler!(100)
 
-    expect(platform.client.patchLight).toHaveBeenCalledWith(light.id, { lightDeviceSettings: { ledLevel: 6 } })
+    expect(platform.client.patchLight).toHaveBeenCalledWith(light.id, {
+      lightDeviceSettings: { ledLevel: 6 },
+    })
   })
 
   it('drives the light motion sensor off a deviceUpdate frame', async () => {
@@ -1229,7 +1473,10 @@ describe('uniFiProtectPlatform', () => {
     const motion = accessory.getServiceById(S.MotionSensor, 'light-motion')!
     expect(motion.valueOf_(C.MotionDetected)).toBe(false)
 
-    bus.emit('deviceUpdate', { type: 'update', item: { id: light.id, modelKey: 'light', isPirMotionDetected: true } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: light.id, modelKey: 'light', isPirMotionDetected: true },
+    })
 
     expect(motion.valueOf_(C.MotionDetected)).toBe(true)
   })
@@ -1248,7 +1495,10 @@ describe('uniFiProtectPlatform', () => {
     // The user switches it on — records a recent write and flips the cache.
     await on.setHandler!(true)
     // A pre-write echo of the OLD state races in during the grace window.
-    bus.emit('deviceUpdate', { type: 'update', item: { id: light.id, modelKey: 'light', isLightOn: false } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: light.id, modelKey: 'light', isLightOn: false },
+    })
 
     // The overlay wins: the tile stays on rather than snapping back off.
     expect(on.value).toBe(true)
@@ -1280,7 +1530,11 @@ describe('uniFiProtectPlatform', () => {
     const patch = (platform.client.patchChime as ReturnType<typeof vi.fn>).mock.calls[0]!
     expect(patch[0]).toBe(chime.id)
     // Every original field survives; only volume changed.
-    expect(patch[1]).toEqual({ ringSettings: [{ cameraId: '1caae4537220700882c792db', repeatTimes: 1, volume: 40 }] })
+    expect(patch[1]).toEqual({
+      ringSettings: [
+        { cameraId: '1caae4537220700882c792db', repeatTimes: 1, volume: 40 },
+      ],
+    })
   })
 
   it('silences the chime when the tile is switched off', async () => {
@@ -1304,10 +1558,15 @@ describe('uniFiProtectPlatform', () => {
     await bulb.getCharacteristic(C.On).setHandler!(false)
     const rings = (chime.ringSettings as Record<string, unknown>[]).map(ring => ({ ...ring, volume: 0 }))
     if (trigger === 'event') {
-      bus.emit('deviceUpdate', { type: 'update', item: { id: chime.id, modelKey: 'chime', ringSettings: rings } })
+      bus.emit('deviceUpdate', {
+        type: 'update',
+        item: { id: chime.id, modelKey: 'chime', ringSettings: rings },
+      })
     }
     else {
-      platform.client.getChimes = vi.fn(async () => [{ ...chime, ringSettings: rings }]) as never
+      platform.client.getChimes = vi.fn(async () => [
+        { ...chime, ringSettings: rings },
+      ]) as never
       await platform.discover()
     }
     await bulb.getCharacteristic(C.On).setHandler!(true)
@@ -1325,7 +1584,16 @@ describe('uniFiProtectPlatform', () => {
 
     await bulb.getCharacteristic(C.Brightness).setHandler!(40)
     // A pre-write echo of the OLD 80 races in during the grace window.
-    bus.emit('deviceUpdate', { type: 'update', item: { id: chime.id, modelKey: 'chime', ringSettings: [{ cameraId: '1caae4537220700882c792db', repeatTimes: 1, volume: 80 }] } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: {
+        id: chime.id,
+        modelKey: 'chime',
+        ringSettings: [
+          { cameraId: '1caae4537220700882c792db', repeatTimes: 1, volume: 80 },
+        ],
+      },
+    })
 
     expect(bulb.getCharacteristic(C.Brightness).value).toBe(40)
   })
@@ -1353,7 +1621,14 @@ describe('uniFiProtectPlatform', () => {
 
     // This frame is entirely schema-valid — a plain ledSettings change — so it
     // passes `schema.safeParse` and reaches `Object.assign`.
-    bus.emit('deviceUpdate', { type: 'update', item: { id: DOORBELL, modelKey: 'camera', ledSettings: { isEnabled: true, welcomeLed: true, floodLed: true } } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: {
+        id: DOORBELL,
+        modelKey: 'camera',
+        ledSettings: { isEnabled: true, welcomeLed: true, floodLed: true },
+      },
+    })
 
     expect(doorbell.services).toEqual(before)
     expect(JSON.stringify(log.warn.mock.calls)).toContain('keeping its existing sensors')
@@ -1378,7 +1653,10 @@ describe('uniFiProtectPlatform', () => {
     // Unrelated: a rename frame that carries no ledSettings at all. If the
     // cache were still stale, re-diffing here would read the old
     // ledSettings.isEnabled: false and flip the switch back.
-    bus.emit('deviceUpdate', { type: 'update', item: { id: DOORBELL, modelKey: 'camera', name: 'Front Door' } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: DOORBELL, modelKey: 'camera', name: 'Front Door' },
+    })
 
     expect(on.value).toBe(true)
   })
@@ -1413,7 +1691,16 @@ describe('uniFiProtectPlatform', () => {
   // path that has produced four Criticals in this repo. A viewer is used because
   // it is still an unhandled model — lights and chimes now build their own services.
   it('builds no camera services for a non-camera device during discovery', async () => {
-    const viewer = { id: 'viewer1', name: 'Hallway', modelKey: 'viewer', featureFlags: { hasSpeaker: true, hasLedStatus: true }, smartDetectSettings: { objectTypes: ['person'], audioTypes: [] } }
+    const viewer = {
+      id: 'viewer1',
+      name: 'Hallway',
+      modelKey: 'viewer',
+      featureFlags: { hasSpeaker: true, hasLedStatus: true },
+      smartDetectSettings: {
+        objectTypes: ['person'],
+        audioTypes: [],
+      },
+    }
     const { platform } = makePlatform(validConfig, [viewer])
 
     await platform.discover()
@@ -1427,14 +1714,19 @@ describe('uniFiProtectPlatform', () => {
   // Final review I1, the second call site: same guard in `applyDeviceUpdate`,
   // equally untested.
   it('builds and removes nothing when a deviceUpdate frame arrives for a non-camera accessory', async () => {
-    const { platform, bus } = makePlatform(validConfig, [{ id: 'viewer1', name: 'Hallway', modelKey: 'viewer' }])
+    const { platform, bus } = makePlatform(validConfig, [
+      { id: 'viewer1', name: 'Hallway', modelKey: 'viewer' },
+    ])
     await platform.discover()
     const accessory = platform.accessories.get('uuid-viewer1') as unknown as FakePlatformAccessory
     // A service some other module owns, carrying a subtype camera.ts claims.
     // It must survive, and no camera service may appear beside it.
     const foreign = accessory.addService(S.MotionSensor, 'Hallway Motion', 'motion')
 
-    bus.emit('deviceUpdate', { type: 'update', item: { id: 'viewer1', modelKey: 'viewer', name: 'Hallway View' } })
+    bus.emit('deviceUpdate', {
+      type: 'update',
+      item: { id: 'viewer1', modelKey: 'viewer', name: 'Hallway View' },
+    })
 
     // The frame really was processed — without this the test would pass just
     // as well if the schema had rejected it before reaching the guard.
@@ -1449,12 +1741,21 @@ describe('uniFiProtectPlatform', () => {
   it('does not throw out of applyDeviceUpdate when buildCameraServices throws', async () => {
     const { platform, bus } = await withCameras()
     const doorbell = platform.accessories.get(`uuid-${DOORBELL}`) as unknown as FakeAccessory
-    const boom = Object.assign(new Error('HAP exploded'), { cause: { apiKey: 'sk-live-DO-NOT-LOG' } })
+    const boom = Object.assign(new Error('HAP exploded'), {
+      cause: { apiKey: 'sk-live-DO-NOT-LOG' },
+    })
     doorbell.getServiceById = () => {
       throw boom
     }
 
-    expect(() => bus.emit('deviceUpdate', { type: 'update', item: { id: DOORBELL, modelKey: 'camera', ledSettings: { isEnabled: true, welcomeLed: true, floodLed: true } } })).not.toThrow()
+    expect(() => bus.emit('deviceUpdate', {
+      type: 'update',
+      item: {
+        id: DOORBELL,
+        modelKey: 'camera',
+        ledSettings: { isEnabled: true, welcomeLed: true, floodLed: true },
+      },
+    })).not.toThrow()
 
     for (const call of log.warn.mock.calls) {
       for (const arg of call)
@@ -1498,8 +1799,18 @@ describe('uniFiProtectPlatform', () => {
       videoPayloadType: 99,
     }, {
       address: '192.0.2.9',
-      video: { port: 5000, ssrc: 7, key: Buffer.alloc(30), localPort: 5001 },
-      audio: { port: 5002, ssrc: 8, key: Buffer.alloc(30), localPort: 5003 },
+      video: {
+        port: 5000,
+        ssrc: 7,
+        key: Buffer.alloc(30),
+        localPort: 5001,
+      },
+      audio: {
+        port: 5002,
+        ssrc: 8,
+        key: Buffer.alloc(30),
+        localPort: 5003,
+      },
     })
     if (!started)
       throw new Error('expected the faked session to start')
@@ -1543,7 +1854,13 @@ describe('uniFiProtectPlatform', () => {
   })
 
   /** Every camera in the fixture opts in to audio. */
-  const audioForAll = { ...validConfig, devices: Object.fromEntries(cameras.map(c => [c.id as string, { audio: true }])) }
+  const audioForAll = {
+    ...validConfig,
+    devices: Object.fromEntries(cameras.map(c => [
+      c.id as string,
+      { audio: true },
+    ])),
+  }
 
   // The shutdown handler is the only thing that kills a running transcode. A
   // throw from one delegate used to abandon every later one, plus the event bus
@@ -1616,7 +1933,12 @@ describe('uniFiProtectPlatform', () => {
   // stream video-only, disabling the audio machinery talkback needs, when no
   // codec is advertised at all. Sending the microphone stays gated elsewhere.
   it('advertises two-way audio for a talkback camera even with the microphone off', async () => {
-    const talkbackOnly = { ...validConfig, devices: { [DOORBELL]: { talkback: true } } }
+    const talkbackOnly = {
+      ...validConfig,
+      devices: {
+        [DOORBELL]: { talkback: true },
+      },
+    }
     const { accessories } = await withCameras(cameras, { config: talkbackOnly })
     const doorbell = doorbellOf(accessories)
     const advertised = (controllerOf(doorbell).options.streamingOptions as { audio?: { codecs: { type: string }[], twoWayAudio?: boolean } }).audio
@@ -1629,7 +1951,12 @@ describe('uniFiProtectPlatform', () => {
   // against the live console) — only the Doorbell has one. Enabling talkback in
   // config on a speakerless camera must not advertise two-way audio.
   it('never advertises two-way audio on a camera without a speaker, whatever the setting says', async () => {
-    const talkbackOnDriveway = { ...validConfig, devices: { [DRIVEWAY]: { talkback: true } } }
+    const talkbackOnDriveway = {
+      ...validConfig,
+      devices: {
+        [DRIVEWAY]: { talkback: true },
+      },
+    }
     const { accessories } = await withCameras(cameras, { config: talkbackOnDriveway })
     const driveway = accessories.find(a => a.UUID === `uuid-${DRIVEWAY}`)!
     const advertised = (controllerOf(driveway).options.streamingOptions as { audio?: { twoWayAudio?: boolean } }).audio
@@ -1689,7 +2016,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('advertises the configured maximum number of concurrent streams', async () => {
-    const { accessories } = await withCameras(cameras, { config: { ...validConfig, maxStreams: 3 } })
+    const { accessories } = await withCameras(cameras, {
+      config: { ...validConfig, maxStreams: 3 },
+    })
 
     for (const accessory of accessories)
       expect(controllerOf(accessory).options.cameraStreamCount).toBe(3)
@@ -1723,7 +2052,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('gives a non-camera device no camera controller at all', async () => {
-    const { platform } = makePlatform(validConfig, [{ id: 'viewer1', name: 'Hallway', modelKey: 'viewer' }])
+    const { platform } = makePlatform(validConfig, [
+      { id: 'viewer1', name: 'Hallway', modelKey: 'viewer' },
+    ])
 
     await platform.discover()
 
@@ -1749,7 +2080,9 @@ describe('uniFiProtectPlatform', () => {
   // Sensors, switches and the doorbell are useful without live view — a host
   // with no usable ffmpeg must not lose them too.
   it('keeps sensors working when the ffmpeg probe fails', async () => {
-    const boom = Object.assign(new Error('no usable ffmpeg'), { cause: { apiKey: 'sk-live-DO-NOT-LOG' } })
+    const boom = Object.assign(new Error('no usable ffmpeg'), {
+      cause: { apiKey: 'sk-live-DO-NOT-LOG' },
+    })
     const probe = vi.fn(async () => {
       throw boom
     })
@@ -1773,7 +2106,12 @@ describe('uniFiProtectPlatform', () => {
   // Snapshotting the settings at construction would mean a quality or audio
   // change only took effect after a Homebridge restart.
   it('reads quality and audio from the live config on every stream request', async () => {
-    const config = { ...validConfig, devices: { [DOORBELL]: { quality: 'low' } } }
+    const config = {
+      ...validConfig,
+      devices: {
+        [DOORBELL]: { quality: 'low' },
+      },
+    }
     const { platform, accessories } = await withCameras(cameras, { config })
     const settings = () => (delegateOf(doorbellOf(accessories)) as unknown as {
       options: { settings: () => { quality: string, audio: boolean, talkback: boolean } }
@@ -1794,7 +2132,12 @@ describe('uniFiProtectPlatform', () => {
 
   /** Only the Doorbell has the lens; Backyard is the control. */
   const BACKYARD = camera('Backyard').id as string
-  const packageOn = (id: string) => ({ ...validConfig, devices: { [id]: { packageCamera: true } } })
+  const packageOn = (id: string) => ({
+    ...validConfig,
+    devices: {
+      [id]: { packageCamera: true },
+    },
+  })
   const PACKAGE_LABEL = 'Doorbell Package Camera'
   const packageOf = (accessories: FakePlatformAccessory[]) =>
     accessories.find(a => a.displayName === PACKAGE_LABEL)
@@ -1802,7 +2145,9 @@ describe('uniFiProtectPlatform', () => {
   const registered = (fn: unknown) => (fn as { mock: { calls: unknown[][] } }).mock.calls.flat(2)
 
   it('adds a package accessory when the lens exists and the user opted in', async () => {
-    const { api, accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { api, accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = packageOf(accessories)
 
     expect(pkg).toBeDefined()
@@ -1819,8 +2164,15 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it.each([49, 50])('bounds a package name from a %i-character parent with its suffix intact', async (length) => {
-    const devices = cameras.map(device => device.id === DOORBELL ? { ...device, name: 'A'.repeat(length) } : device)
-    const { platform } = await withCameras(devices, { config: packageOn(DOORBELL) })
+    const devices = cameras.map(device => device.id === DOORBELL
+      ? {
+          ...device,
+          name: 'A'.repeat(length),
+        }
+      : device)
+    const { platform } = await withCameras(devices, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = platform.accessories.get(`uuid-${DOORBELL}-package`)!
     expect(pkg.displayName).toBe(`${'A'.repeat(49)} Package Camera`)
     expect(pkg.displayName).toHaveLength(64)
@@ -1839,7 +2191,9 @@ describe('uniFiProtectPlatform', () => {
     // green result cannot come from the fixture having drifted.
     expect(camera('Backyard').hasPackageCamera).toBe(false)
 
-    const { accessories } = await withCameras(cameras, { config: packageOn(BACKYARD) })
+    const { accessories } = await withCameras(cameras, {
+      config: packageOn(BACKYARD),
+    })
 
     expect(accessories.map(a => a.displayName)).not.toContain('Backyard Package Camera')
     expect(accessories).toHaveLength(5)
@@ -1850,7 +2204,9 @@ describe('uniFiProtectPlatform', () => {
   // must read as "no lens", never as "assume yes".
   it('adds none when a degraded payload carries no lens flag at all', async () => {
     const degraded = cameras.map(c => ({ id: c.id, name: c.name, modelKey: 'camera' }))
-    const { accessories } = await withCameras(degraded, { config: packageOn(DOORBELL) })
+    const { accessories } = await withCameras(degraded, {
+      config: packageOn(DOORBELL),
+    })
 
     expect(packageOf(accessories)).toBeUndefined()
   })
@@ -1860,7 +2216,9 @@ describe('uniFiProtectPlatform', () => {
   // accessories reads to HomeKit as the old one disappearing, which silently
   // breaks every automation built on it.
   it('adds no sensors, doorbell or led switch to the package accessory', async () => {
-    const { accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = packageOf(accessories)!
 
     expect(pkg.services.filter(s => s.type === S.MotionSensor)).toHaveLength(0)
@@ -1874,7 +2232,9 @@ describe('uniFiProtectPlatform', () => {
 
   // Otherwise Home.app shows Default-Manufacturer/Model/Serial on its tile.
   it('populates AccessoryInformation on the package accessory, with its own serial', async () => {
-    const { accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = packageOf(accessories)!
     const main = doorbellOf(accessories)
     const info = pkg.getService(S.AccessoryInformation)!
@@ -1891,8 +2251,15 @@ describe('uniFiProtectPlatform', () => {
   // instead would make HomeKit treat the accessory as new the moment a real
   // payload arrives.
   it('does not set AccessoryInformation on the package accessory from a degraded payload', async () => {
-    const degraded = cameras.map(c => ({ id: c.id, name: c.name, modelKey: 'camera', hasPackageCamera: true }))
-    const { accessories } = await withCameras(degraded, { config: packageOn(DOORBELL) })
+    const degraded = cameras.map(c => ({
+      id: c.id,
+      name: c.name,
+      modelKey: 'camera',
+      hasPackageCamera: true,
+    }))
+    const { accessories } = await withCameras(degraded, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = packageOf(accessories)!
 
     expect(pkg.getService(S.AccessoryInformation)).toBeUndefined()
@@ -1901,7 +2268,12 @@ describe('uniFiProtectPlatform', () => {
   // The lens is 1600x1200 — 4:3, unlike every other stream this plugin serves.
   // Advertising a 16:9 size would promise a frame it cannot produce.
   it('advertises 4:3 resolutions and no audio for the package lens', async () => {
-    const config = { ...validConfig, devices: { [DOORBELL]: { packageCamera: true, audio: true } } }
+    const config = {
+      ...validConfig,
+      devices: {
+        [DOORBELL]: { packageCamera: true, audio: true },
+      },
+    }
     const { accessories } = await withCameras(cameras, { config })
     const pkg = packageOf(accessories)!
     const streaming = controllerOf(pkg).options.streamingOptions as {
@@ -1937,7 +2309,12 @@ describe('uniFiProtectPlatform', () => {
   // The package lens shares the main camera's speaker as much as its
   // microphone — it has no speaker of its own to accept return audio on.
   it('never advertises two-way audio on the package lens, even with talkback and audio on', async () => {
-    const config = { ...validConfig, devices: { [DOORBELL]: { packageCamera: true, audio: true, talkback: true } } }
+    const config = {
+      ...validConfig,
+      devices: {
+        [DOORBELL]: { packageCamera: true, audio: true, talkback: true },
+      },
+    }
     const { accessories } = await withCameras(cameras, { config })
     const pkg = packageOf(accessories)!
     const streaming = controllerOf(pkg).options.streamingOptions as { audio?: unknown }
@@ -1946,7 +2323,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('streams the package channel, not a quality tier', async () => {
-    const { accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const options = (delegateOf(packageOf(accessories)!) as unknown as {
       options: { channel?: string, deviceId: string }
     }).options
@@ -1963,7 +2342,9 @@ describe('uniFiProtectPlatform', () => {
   // asserting only that stopAll() was called stays green even if it kills
   // nothing at all.
   it('stops the package delegate on shutdown too', async () => {
-    const { api, accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { api, accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const delegate = delegateOf(packageOf(accessories)!)
     const child = await startFakeSession(delegate)
     expect(delegate.activeCount).toBe(1)
@@ -1982,7 +2363,13 @@ describe('uniFiProtectPlatform', () => {
   // which CREATES a stream — a state-changing request against every camera on
   // every startup, to learn something the inventory payload already carries.
   it('makes no console request to detect the package lens', async () => {
-    const config = { ...validConfig, devices: Object.fromEntries(cameras.map(c => [c.id as string, { packageCamera: true }])) }
+    const config = {
+      ...validConfig,
+      devices: Object.fromEntries(cameras.map(c => [
+        c.id as string,
+        { packageCamera: true },
+      ])),
+    }
     const { platform, accessories } = await withCameras(cameras, { config })
     const client = (platform as unknown as { client: ReturnType<typeof makeClient> }).client
 
@@ -2004,7 +2391,9 @@ describe('uniFiProtectPlatform', () => {
   // sweep sees it as a device that vanished — and unregistering is
   // irreversible: HomeKit rooms, scenes and automations do not come back.
   it('keeps the package accessory across later discoveries', async () => {
-    const { api, platform, accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { api, platform, accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = packageOf(accessories)!
     platform.confirmRemovalAfterMs = 0
 
@@ -2058,10 +2447,17 @@ describe('uniFiProtectPlatform', () => {
   // toggle is the user's explicit instruction, and a missing ffmpeg is no
   // reason to keep an accessory they asked to be rid of.
   it('removes the package accessory when the setting is off, even with ffmpeg unusable', async () => {
-    const { accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = packageOf(accessories)!
 
-    const off = { ...validConfig, devices: { [DOORBELL]: { packageCamera: false } } }
+    const off = {
+      ...validConfig,
+      devices: {
+        [DOORBELL]: { packageCamera: false },
+      },
+    }
     const restarted = await restartWithoutFfmpeg(off, cameras, pkg)
 
     expect(restarted.platform.accessories.has(pkg.UUID)).toBe(false)
@@ -2074,7 +2470,9 @@ describe('uniFiProtectPlatform', () => {
     const { accessories } = await withCameras(cameras, { config })
     const pkg = packageOf(accessories)!
 
-    const lensGone = cameras.map(c => (c.id === DOORBELL ? { ...c, hasPackageCamera: false } : c))
+    const lensGone = cameras.map(c => (c.id === DOORBELL
+      ? { ...c, hasPackageCamera: false }
+      : c))
     const restarted = await restartWithoutFfmpeg(config, lensGone, pkg)
 
     expect(restarted.platform.accessories.has(pkg.UUID)).toBe(false)
@@ -2090,7 +2488,9 @@ describe('uniFiProtectPlatform', () => {
     expect(pkg.displayName).toBe('Doorbell Package Camera')
 
     const client = (platform as unknown as { client: ReturnType<typeof makeClient> }).client
-    client.getCameras.mockResolvedValueOnce(cameras.map(c => (c.id === DOORBELL ? { ...c, name: 'Front Door' } : c)))
+    client.getCameras.mockResolvedValueOnce(cameras.map(c => (c.id === DOORBELL
+      ? { ...c, name: 'Front Door' }
+      : c)))
     await platform.discover()
 
     expect(pkg.displayName).toBe('Front Door Package Camera')
@@ -2103,7 +2503,10 @@ describe('uniFiProtectPlatform', () => {
     const probe = vi.fn(async () => {
       throw new Error('no usable ffmpeg')
     })
-    const { accessories } = await withCameras(cameras, { config: packageOn(DOORBELL), probeFfmpeg: probe })
+    const { accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+      probeFfmpeg: probe,
+    })
 
     expect(packageOf(accessories)).toBeUndefined()
   })
@@ -2112,7 +2515,9 @@ describe('uniFiProtectPlatform', () => {
   // takes effect now rather than waiting out the confirmation window meant for
   // a console answering mid-reboot.
   it('removes the package accessory and stops its ffmpeg when the setting is switched off', async () => {
-    const { api, platform, accessories } = await withCameras(cameras, { config: packageOn(DOORBELL) })
+    const { api, platform, accessories } = await withCameras(cameras, {
+      config: packageOn(DOORBELL),
+    })
     const pkg = packageOf(accessories)!
     const delegate = delegateOf(pkg)
     // A live session, so this asserts the transcode actually died rather than
@@ -2140,7 +2545,9 @@ describe('uniFiProtectPlatform', () => {
     const stop = vi.spyOn(delegateOf(pkg), 'stopAll')
 
     const client = (platform as unknown as { client: ReturnType<typeof makeClient> }).client
-    client.getCameras.mockResolvedValueOnce(cameras.map(c => (c.id === DOORBELL ? { ...c, hasPackageCamera: false } : c)))
+    client.getCameras.mockResolvedValueOnce(cameras.map(c => (c.id === DOORBELL
+      ? { ...c, hasPackageCamera: false }
+      : c)))
     await platform.discover()
 
     expect(platform.accessories.has(pkg.UUID)).toBe(false)
@@ -2150,9 +2557,17 @@ describe('uniFiProtectPlatform', () => {
 
   // One camera failing must not abort discovery for every other device.
   it('keeps discovering when the package accessory cannot be wired up', async () => {
-    const config = { ...validConfig, devices: Object.fromEntries(cameras.map(c => [c.id as string, { packageCamera: true }])) }
+    const config = {
+      ...validConfig,
+      devices: Object.fromEntries(cameras.map(c => [
+        c.id as string,
+        { packageCamera: true },
+      ])),
+    }
     const { platform, api } = makePlatform(config, cameras)
-    const boom = Object.assign(new Error('controller refused'), { cause: { apiKey: 'sk-live-DO-NOT-LOG' } })
+    const boom = Object.assign(new Error('controller refused'), {
+      cause: { apiKey: 'sk-live-DO-NOT-LOG' },
+    })
     class Exploding extends FakePlatformAccessory {
       configureController(controller: never) {
         if (this.displayName.endsWith('Package Camera'))
@@ -2168,7 +2583,9 @@ describe('uniFiProtectPlatform', () => {
     // accessory is registered and SURVIVES the removal sweep controller-less.
     // Nothing in the console inventory carries its UUID, so without that return
     // the sweep would unregister it over a transient wiring failure.
-    const pkg = [...platform.accessories.values()].find(a => a.displayName === 'Doorbell Package Camera')!
+    const pkg = [
+      ...platform.accessories.values(),
+    ].find(a => a.displayName === 'Doorbell Package Camera')!
     expect(pkg).toBeDefined()
     expect((pkg as unknown as FakeAccessory).controllers).toHaveLength(0)
     platform.confirmRemovalAfterMs = 0
@@ -2196,7 +2613,10 @@ describe('uniFiProtectPlatform', () => {
 
   const hksvOn = (...ids: string[]) => ({
     ...validConfig,
-    devices: Object.fromEntries(ids.map(id => [id, { hksv: true }])),
+    devices: Object.fromEntries(ids.map(id => [
+      id,
+      { hksv: true },
+    ])),
   })
   const recordingOf = (accessory: FakePlatformAccessory) =>
     controllerOf(accessory).options.recording as { options: CameraRecordingOptions, delegate: RecordingDelegate } | undefined
@@ -2247,7 +2667,9 @@ describe('uniFiProtectPlatform', () => {
   }
 
   it('offers recording only for the cameras that enabled it', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const doorbell = doorbellOf(accessories)
 
     expect(recordingOf(doorbell)).toBeDefined()
@@ -2266,7 +2688,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('advertises a four second prebuffer and fragmented mp4', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const options = recordingOf(doorbellOf(accessories))!.options
 
     expect(options.prebufferLength).toBe(4000)
@@ -2279,9 +2703,13 @@ describe('uniFiProtectPlatform', () => {
   // (its ffmpeg has libopus and no libfdk_aac) and the paths differ on purpose:
   // advertising Opus here promises HomeKit a recording it will refuse.
   it('advertises AAC-LC for recording and never Opus', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const audio = recordingOf(doorbellOf(accessories))!.options.audio
-    const codecs = Array.isArray(audio.codecs) ? audio.codecs : [audio.codecs]
+    const codecs = Array.isArray(audio.codecs)
+      ? audio.codecs
+      : [audio.codecs]
 
     expect(codecs).toHaveLength(1)
     expect(codecs[0]!.type).toBe(hap.AudioRecordingCodecType.AAC_LC)
@@ -2298,7 +2726,9 @@ describe('uniFiProtectPlatform', () => {
   // hap-nodejs derives MOTION from a CONTROLLER-owned sensor — which camera.ts
   // already builds itself, off the event pipeline.
   it('declares the motion trigger without letting the controller build a second motion sensor', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DRIVEWAY) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DRIVEWAY),
+    })
     const driveway = accessories.find(a => a.UUID === `uuid-${DRIVEWAY}`)!
 
     expect(recordingOf(driveway)!.options.overrideEventTriggerOptions).toEqual([hap.EventTriggerOption.MOTION])
@@ -2309,7 +2739,9 @@ describe('uniFiProtectPlatform', () => {
   // into the SupportedCameraRecordingConfiguration bitmask, and without the
   // DOORBELL bit HomeKit is told the camera records on motion alone.
   it('declares the doorbell trigger as well as motion on a camera with a speaker', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const doorbell = doorbellOf(accessories)
     const triggers = recordingOf(doorbell)!.options.overrideEventTriggerOptions
 
@@ -2322,7 +2754,9 @@ describe('uniFiProtectPlatform', () => {
   // not exist.
   it('declares no doorbell trigger on a camera without a speaker', async () => {
     const speakerless = [DRIVEWAY, GARAGE]
-    const { accessories } = await withCameras(cameras, { config: hksvOn(...speakerless) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(...speakerless),
+    })
 
     for (const id of speakerless) {
       const camera = accessories.find(a => a.UUID === `uuid-${id}`)!
@@ -2335,7 +2769,9 @@ describe('uniFiProtectPlatform', () => {
   // the subtyped `ring` one the event pipeline already rings — a duplicate
   // control in Home.app on the very accessory the user tests first.
   it('still has exactly one doorbell service, still the ring one, once the doorbell trigger is declared', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const doorbell = doorbellOf(accessories)
 
     expect(recordingOf(doorbell)!.options.overrideEventTriggerOptions).toContain(hap.EventTriggerOption.DOORBELL)
@@ -2357,7 +2793,9 @@ describe('uniFiProtectPlatform', () => {
   // Asserted as the INVARIANT rather than as the literal list: a future change
   // that adds a rung has to satisfy the mapping, not just update a copy of it.
   it('only advertises recording resolutions its substream delivers unscaled', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const resolutions = recordingOf(doorbellOf(accessories))!.options.video.resolutions
 
     expect(resolutions.length).toBeGreaterThan(0)
@@ -2370,7 +2808,9 @@ describe('uniFiProtectPlatform', () => {
   // HAP builds CameraOperatingMode from the `recording` option alone. Adding one
   // by hand puts a second, unmanaged copy on the accessory.
   it('leaves the HKSV services to hap-nodejs, exactly one of each', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const doorbell = doorbellOf(accessories)
     const count = (type: object) => doorbell.services.filter(s => s.type === type).length
 
@@ -2380,7 +2820,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('does not build a second recording delegate on a later discovery', async () => {
-    const { platform, accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { platform, accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const doorbell = doorbellOf(accessories)
     const recorder = recorderOf(doorbell)
 
@@ -2401,7 +2843,12 @@ describe('uniFiProtectPlatform', () => {
   // AUDIO is still re-read at every encoder start rather than snapshotted at
   // construction, so a setting saved in the UI reaches the next start.
   it('records the advertised substream whatever quality is pinned, and re-reads audio on every start', async () => {
-    const config = { ...validConfig, devices: { [DOORBELL]: { hksv: true, audio: true, quality: 'low' } } }
+    const config = {
+      ...validConfig,
+      devices: {
+        [DOORBELL]: { hksv: true, audio: true, quality: 'low' },
+      },
+    }
     const { platform, accessories } = await withCameras(cameras, { config })
     const doorbell = doorbellOf(accessories)
     const recorder = recorderOf(doorbell)!
@@ -2442,7 +2889,9 @@ describe('uniFiProtectPlatform', () => {
   })
 
   it('stops the recording encoder on shutdown too', async () => {
-    const { api, accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { api, accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const recorder = recorderOf(doorbellOf(accessories))!
     const spawns = await startRecorder(recorder)
 
@@ -2458,7 +2907,9 @@ describe('uniFiProtectPlatform', () => {
   // failed kill nothing held the delegate any more, no later attempt could
   // exist, and the ffmpeg outlived the accessory and the whole plugin.
   it('keeps a recorder whose kill failed, so a later attempt can still stop it', async () => {
-    const { api, platform, accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { api, platform, accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const recorder = recorderOf(doorbellOf(accessories))!
     const spawns = await startRecorder(recorder)
     const child = spawns[0]!.child
@@ -2498,7 +2949,9 @@ describe('uniFiProtectPlatform', () => {
   const withoutDoorbell = () => makeClient(cameras.filter(c => c.id !== DOORBELL))
 
   it('stops the recording encoder when the accessory is removed', async () => {
-    const { platform, accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { platform, accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const recorder = recorderOf(doorbellOf(accessories))!
     const spawns = await startRecorder(recorder)
 
@@ -2521,11 +2974,15 @@ describe('uniFiProtectPlatform', () => {
   // live timer plus a retained delegate for the life of the process — spawning
   // ffmpeg against a camera HomeKit no longer knows about.
   it('clears a pending encoder restart when the accessory is removed', async () => {
-    const { platform, accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { platform, accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const recorder = recorderOf(doorbellOf(accessories))!
     const spawns = await startRecorder(recorder)
 
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout'],
+    })
     try {
       // An unexpected exit. The restart policy now has a timer pending.
       spawns[0]!.child.emit('close', 1)
@@ -2554,7 +3011,9 @@ describe('uniFiProtectPlatform', () => {
   // the failure tally for a process they deliberately stopped, which nudges a
   // healthy camera towards the ten-minute cadence on its next real fault.
   it('ignores the exit of a process that was already replaced', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const recorder = recorderOf(doorbellOf(accessories))!
     const spawns = await startRecorder(recorder)
     // A kill with no SYNCHRONOUS close — the real child's arrives later, which
@@ -2596,7 +3055,9 @@ describe('uniFiProtectPlatform', () => {
   // splitter now drops, and `onExit` never fires for it — nothing else in the
   // process would ever say so.
   it('reports a failed kill after the recording stream turns unreadable, exactly once', async () => {
-    const { accessories } = await withCameras(cameras, { config: hksvOn(DOORBELL) })
+    const { accessories } = await withCameras(cameras, {
+      config: hksvOn(DOORBELL),
+    })
     const recorder = recorderOf(doorbellOf(accessories))!
     const spawns = await startRecorder(recorder)
     const child = spawns[0]!.child
@@ -2628,13 +3089,22 @@ describe('console certificate trust', () => {
     vi.clearAllMocks()
     dir = mkdtempSync(join(tmpdir(), 'protect-platform-test-'))
     configPath = join(dir, 'config.json')
-    writeFileSync(configPath, JSON.stringify({ bridge: { name: 'Homebridge' }, platforms: [{ ...validConfig }] }, null, 4))
+    writeFileSync(configPath, JSON.stringify({
+      bridge: { name: 'Homebridge' },
+      platforms: [
+        { ...validConfig },
+      ],
+    }, null, 4))
   })
 
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
   /** Homebridge hands plugins the config path here; the test api has no `user`. */
-  const withConfigPath = (api: Record<string, unknown>) => Object.assign(api, { user: { configPath: () => configPath } })
+  const withConfigPath = (api: Record<string, unknown>) => Object.assign(api, {
+    user: {
+      configPath: () => configPath,
+    },
+  })
 
   it('trusts the certificate on first use, logs the fingerprint and saves it', async () => {
     const { api, platform } = makePlatform(validConfig, [camera], CERT_A)

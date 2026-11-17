@@ -6,18 +6,37 @@ const load = (n: string) => JSON.parse(readFileSync(`test/fixtures/events/${n}.j
 
 describe('routeEvent', () => {
   it('never throws on malformed input', () => {
-    for (const bad of [null, undefined, 0, 'x', [], {}, { item: null }, { item: { type: 5 } }, { type: 'add' }])
+    for (const bad of [
+      null,
+      undefined,
+      0,
+      'x',
+      [],
+      {},
+      { item: null },
+      {
+        item: { type: 5 },
+      },
+      { type: 'add' },
+    ])
       expect(() => routeEvent(bad)).not.toThrow()
   })
 
   it('returns null for frames it does not handle', () => {
-    expect(routeEvent({ type: 'add', item: { type: 'somethingNew', device: 'd', id: 'e' } })).toBeNull()
+    expect(routeEvent({
+      type: 'add',
+      item: { type: 'somethingNew', device: 'd', id: 'e' },
+    })).toBeNull()
   })
 
   it('maps a real motion event to the motion subtype', () => {
     const frame = load('motion').find((f: { payload: { type: string } }) => f.payload.type === 'add')
     const routed = routeEvent(frame.payload)
-    expect(routed).toMatchObject({ subtypes: ['motion'], phase: 'start', stateless: false })
+    expect(routed).toMatchObject({
+      subtypes: ['motion'],
+      phase: 'start',
+      stateless: false,
+    })
     expect(routed!.deviceId).toBe(frame.payload.item.device)
     // Real hardware never sends an explicit `end: null` on an in-progress
     // event — the key is simply absent. Confirm the fixture agrees.
@@ -37,13 +56,20 @@ describe('routeEvent', () => {
   it('maps a real ring event to the ring subtype and marks it stateless', () => {
     const frame = load('ring').find((f: { payload: { type: string } }) => f.payload.type === 'add')
     const routed = routeEvent(frame.payload)
-    expect(routed).toMatchObject({ subtypes: ['ring'], phase: 'start', stateless: true })
+    expect(routed).toMatchObject({
+      subtypes: ['ring'],
+      phase: 'start',
+      stateless: true,
+    })
   })
 
   it('maps a real smartDetectZone (person) event to motion plus detect-person', () => {
     const frame = load('smart-detect').find((f: { payload: { type: string } }) => f.payload.type === 'add')
     const routed = routeEvent(frame.payload)
-    expect(routed).toMatchObject({ subtypes: ['motion', 'detect-person'], phase: 'start' })
+    expect(routed).toMatchObject({
+      subtypes: ['motion', 'detect-person'],
+      phase: 'start',
+    })
     // smartDetectTypes is observed only on smartDetectZone/Line/LoiterZone items,
     // never on motion or ring.
     expect(Array.isArray(frame.payload.item.smartDetectTypes)).toBe(true)
@@ -68,7 +94,13 @@ describe('routeEvent', () => {
     for (const type of ['smartDetectZone', 'smartDetectLine', 'smartDetectLoiterZone']) {
       const routed = routeEvent({
         type: 'add',
-        item: { id: 'e1', device: 'cam1', type, start: 1, smartDetectTypes: ['person', 'vehicle'] },
+        item: {
+          id: 'e1',
+          device: 'cam1',
+          type,
+          start: 1,
+          smartDetectTypes: ['person', 'vehicle'],
+        },
       })
       expect(routed?.subtypes, type).toEqual(['motion', 'detect-person', 'detect-vehicle'])
     }
@@ -85,7 +117,12 @@ describe('routeEvent', () => {
         // Shape derived from the real captured person smartDetectZone item,
         // with type/smartDetectTypes swapped in — no smartAudioDetect frame
         // was ever observed on real hardware.
-        smartDetectTypes: ['alrmSmoke', 'alrmBark', 'alrmCmonx', 'alrmCarHorn'],
+        smartDetectTypes: [
+          'alrmSmoke',
+          'alrmBark',
+          'alrmCmonx',
+          'alrmCarHorn',
+        ],
       },
     })
     expect(routed?.subtypes).toEqual(['audio-alrmSmoke', 'audio-alrmCmonx'])
@@ -94,7 +131,13 @@ describe('routeEvent', () => {
   it('drops an unknown detection type without throwing, keeping the motion trigger', () => {
     const routed = routeEvent({
       type: 'add',
-      item: { id: 'e3', device: 'cam1', type: 'smartDetectZone', start: 1, smartDetectTypes: ['person', 'teleporter'] },
+      item: {
+        id: 'e3',
+        device: 'cam1',
+        type: 'smartDetectZone',
+        start: 1,
+        smartDetectTypes: ['person', 'teleporter'],
+      },
     })
     expect(routed?.subtypes).toEqual(['motion', 'detect-person'])
   })
@@ -105,13 +148,33 @@ describe('routeEvent', () => {
     // when no per-type sensor can be named.
     expect(routeEvent({
       type: 'add',
-      item: { id: 'e4', device: 'cam1', type: 'smartDetectZone', start: 1, smartDetectTypes: ['teleporter'] },
-    })).toMatchObject({ subtypes: ['motion'], phase: 'start' })
+      item: {
+        id: 'e4',
+        device: 'cam1',
+        type: 'smartDetectZone',
+        start: 1,
+        smartDetectTypes: ['teleporter'],
+      },
+    })).toMatchObject({
+      subtypes: ['motion'],
+      phase: 'start',
+    })
   })
 
   it('marks a ring as stateless', () => {
-    const routed = routeEvent({ type: 'add', item: { id: 'e5', device: 'cam1', type: 'ring', start: 1 } })
-    expect(routed).toMatchObject({ subtypes: ['ring'], stateless: true })
+    const routed = routeEvent({
+      type: 'add',
+      item: {
+        id: 'e5',
+        device: 'cam1',
+        type: 'ring',
+        start: 1,
+      },
+    })
+    expect(routed).toMatchObject({
+      subtypes: ['ring'],
+      stateless: true,
+    })
   })
 
   it('routes vehicle and animal detections (synthesized: only person ever fired during capture)', () => {
@@ -120,24 +183,53 @@ describe('routeEvent', () => {
     // cameras during Task 0 capture.
     const routed = routeEvent({
       type: 'add',
-      item: { id: 'e7', device: '3df76e6abedbeab796e616d9', type: 'smartDetectZone', start: 1785563286381, smartDetectTypes: ['vehicle', 'animal'] },
+      item: {
+        id: 'e7',
+        device: '3df76e6abedbeab796e616d9',
+        type: 'smartDetectZone',
+        start: 1785563286381,
+        smartDetectTypes: ['vehicle', 'animal'],
+      },
     })
     expect(routed?.subtypes).toEqual(['motion', 'detect-vehicle', 'detect-animal'])
   })
 
   it('distinguishes the three phases', () => {
-    const base = { id: 'e6', device: 'cam1', type: 'motion', start: 1 }
-    expect(routeEvent({ type: 'add', item: { ...base } })?.phase).toBe('start')
-    expect(routeEvent({ type: 'update', item: { ...base, end: 2 } })?.phase).toBe('end')
+    const base = {
+      id: 'e6',
+      device: 'cam1',
+      type: 'motion',
+      start: 1,
+    }
+    expect(routeEvent({
+      type: 'add',
+      item: { ...base },
+    })?.phase).toBe('start')
+    expect(routeEvent({
+      type: 'update',
+      item: { ...base, end: 2 },
+    })?.phase).toBe('end')
     // An `add` that already carries an end is a detection too short to span two frames.
-    expect(routeEvent({ type: 'add', item: { ...base, end: 2 } })?.phase).toBe('momentary')
+    expect(routeEvent({
+      type: 'add',
+      item: { ...base, end: 2 },
+    })?.phase).toBe('momentary')
   })
 
   it('treats an explicit end: null the same as an absent key, defensively', () => {
     // Not observed on real hardware (Task 0 saw zero explicit nulls across 33
     // frames), but the router must not crash or misclassify if a future
     // firmware ever sends one.
-    const routed = routeEvent({ type: 'add', item: { id: 'e8', device: 'cam1', type: 'motion', start: 1, end: null } })
+    const routed = routeEvent({
+      type: 'add',
+      item: {
+        id: 'e8',
+        device: 'cam1',
+        type: 'motion',
+        start: 1,
+        end: null,
+      },
+    })
     expect(routed?.phase).toBe('start')
   })
 

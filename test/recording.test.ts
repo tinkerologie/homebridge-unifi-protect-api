@@ -11,7 +11,9 @@ import { FfmpegProcess } from '../src/protect/ffmpeg.js'
 // setTimeout only: `flush` below rides on setImmediate, and faking that would
 // hang every await in this file.
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout'],
+  })
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -94,14 +96,27 @@ function box(type: string, payload = ''): Buffer {
   return buf
 }
 
-const init = (marker: string) => Buffer.concat([box('ftyp', marker), box('moov')])
-const fragment = (marker: string) => Buffer.concat([box('moof'), box('mdat', marker)])
+function init(marker: string) {
+  return Buffer.concat([
+    box('ftyp', marker),
+    box('moov'),
+  ])
+}
+function fragment(marker: string) {
+  return Buffer.concat([
+    box('moof'),
+    box('mdat', marker),
+  ])
+}
 
 function fakeSpawn() {
   const proc = Object.assign(new EventEmitter(), {
     stderr: new EventEmitter(),
     stdout: new EventEmitter(),
-    stdin: Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn() }),
+    stdin: Object.assign(new EventEmitter(), {
+      write: vi.fn(),
+      end: vi.fn(),
+    }),
     kill: vi.fn(() => true),
     killed: false,
   })
@@ -112,7 +127,11 @@ function fakeSpawn() {
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
 function harness(options: { audio?: boolean, url?: (deviceId: string, quality: Quality) => Promise<string> } = {}) {
-  const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() }
+  const log = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  }
   const { proc, spawn } = fakeSpawn()
   // Declared WITH its parameters: inferred from a zero-arg implementation,
   // `get.mock.calls[0]` types as an empty tuple and reading [1] needs a cast
@@ -167,7 +186,9 @@ function configuration(fragmentLength: number, width = 1920, height = 1080): Cam
     prebufferLength: 4000,
     eventTriggerTypes: [],
     mediaContainerConfiguration: { fragmentLength },
-    videoCodec: { resolution: [width, height, 30] },
+    videoCodec: {
+      resolution: [width, height, 30],
+    },
     audioCodec: {},
   } as unknown as CameraRecordingConfiguration
 }
@@ -210,7 +231,14 @@ describe('recordingArgs', () => {
     const args = recordingArgs(caps, { url: URL, audio: true, fragmentMs: 4000 })
     const output = args.indexOf('pipe:1')
     expect(output).toBe(args.length - 1)
-    for (const option of ['-c:v', '-c:a', '-f', '-movflags', '-frag_duration', '-b:v']) {
+    for (const option of [
+      '-c:v',
+      '-c:a',
+      '-f',
+      '-movflags',
+      '-frag_duration',
+      '-b:v',
+    ]) {
       // PRESENCE first: indexOf returns -1 for an option that was deleted
       // outright, and -1 is less than every index, so the ordering assertion
       // alone passes for an option that is not there at all.
@@ -366,7 +394,11 @@ describe('recordingDelegate stream generator', () => {
     await flush()
     h.close(1)
     await drained
-    const logged = [...h.log.info.mock.calls, ...h.log.warn.mock.calls, ...h.log.debug.mock.calls].flat().join(' ')
+    const logged = [
+      ...h.log.info.mock.calls,
+      ...h.log.warn.mock.calls,
+      ...h.log.debug.mock.calls,
+    ].flat().join(' ')
     expect(logged).not.toContain(SECRET)
   })
 })
@@ -388,9 +420,11 @@ describe('recordingDelegate encoder', () => {
 
   it('does not spawn at all if recording was switched off while the url was being fetched', async () => {
     let release: (url: string) => void = () => {}
-    const h = harness({ url: () => new Promise<string>((resolve) => {
-      release = resolve
-    }) })
+    const h = harness({
+      url: () => new Promise<string>((resolve) => {
+        release = resolve
+      }),
+    })
     h.delegate.updateRecordingActive(true)
     h.delegate.updateRecordingActive(false)
     release(URL)
@@ -399,9 +433,11 @@ describe('recordingDelegate encoder', () => {
   })
 
   it('redacts the stream url out of an encoder start failure', async () => {
-    const h = harness({ url: async () => {
-      throw new Error(`connect failed for ${URL}`)
-    } })
+    const h = harness({
+      url: async () => {
+        throw new Error(`connect failed for ${URL}`)
+      },
+    })
     await h.start()
     const warned = h.log.warn.mock.calls.flat().join(' ')
     expect(warned).not.toContain(SECRET)
@@ -529,7 +565,9 @@ describe('recordingDelegate encoder', () => {
     // No media, but a properly terminated stream — see the empty-packet test
     // above for why an empty generator is not an acceptable answer here.
     const packets = await drain(h.delegate.handleRecordingStreamRequest(1))
-    expect(packets.map(p => [p.data.length, p.isLast])).toEqual([[0, true]])
+    expect(packets.map(p => [p.data.length, p.isLast])).toEqual([
+      [0, true],
+    ])
   })
 
   // Never awaited: the point is what the generator YIELDS once the new encoder
@@ -555,7 +593,12 @@ describe('recordingDelegate encoder', () => {
     await flush()
     // The empty terminator and nothing else: not one byte of the NEW encoder's
     // media reaches a stream opened against the old one.
-    expect(packets.map(p => [p.data.toString('latin1'), p.isLast])).toEqual([['', true]])
+    expect(packets.map(p => [
+      p.data.toString('latin1'),
+      p.isLast,
+    ])).toEqual([
+      ['', true],
+    ])
     h.close(1)
   })
 
@@ -738,7 +781,9 @@ describe('recordingDelegate encoder', () => {
    * tally compares real timestamps.
    */
   async function onSlowCadence() {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'Date'],
+    })
     const h = await harnessStarted()
     for (let i = 0; i <= MAX_RESTARTS; i++) {
       h.proc.emit('close', 1)
@@ -838,11 +883,13 @@ describe('recordingDelegate encoder', () => {
   // console blip ended recording for that camera permanently.
   it('retries a start that failed before any process existed', async () => {
     let fail = true
-    const h = harness({ url: async () => {
-      if (fail)
-        throw new Error(`console unreachable for ${URL}`)
-      return URL
-    } })
+    const h = harness({
+      url: async () => {
+        if (fail)
+          throw new Error(`console unreachable for ${URL}`)
+        return URL
+      },
+    })
     await h.start()
     expect(h.spawn).not.toHaveBeenCalled()
     fail = false
@@ -859,9 +906,11 @@ describe('recordingDelegate encoder', () => {
   // fired afterwards and fetched a stream URL for a camera that may already have
   // been removed. `get` is the observable: with the fix it stops at two calls.
   it('does not leave an orphaned restart timer behind when a retry lands on a pending one', async () => {
-    const h = harness({ url: async () => {
-      throw new Error(`console unreachable for ${URL}`)
-    } })
+    const h = harness({
+      url: async () => {
+        throw new Error(`console unreachable for ${URL}`)
+      },
+    })
     await h.start()
     expect(h.get).toHaveBeenCalledTimes(1)
 

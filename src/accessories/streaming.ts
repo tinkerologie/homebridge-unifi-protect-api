@@ -30,7 +30,9 @@ import { selectQuality } from './quality.js'
  * software, where three concurrent streams would saturate a 12-thread host.
  */
 export function defaultMaxStreams(caps: FfmpegCapabilities): number {
-  return caps.encoder === 'libx264' ? 2 : 6
+  return caps.encoder === 'libx264'
+    ? 2
+    : 6
 }
 
 /** One RTP destination HomeKit prepared: its port, its SSRC and its own SRTP key. */
@@ -158,8 +160,12 @@ function clampFps(value: number): number {
 }
 
 function destination(address: string, target: RtpTarget, packetSize: number): string {
-  const host = address.includes(':') ? `[${address}]` : address
-  const local = target.localPort === undefined ? '' : `&localrtcpport=${target.localPort}`
+  const host = address.includes(':')
+    ? `[${address}]`
+    : address
+  const local = target.localPort === undefined
+    ? ''
+    : `&localrtcpport=${target.localPort}`
   return `srtp://${host}:${target.port}?rtcpport=${target.port}${local}&pkt_size=${packetSize}`
 }
 
@@ -186,7 +192,9 @@ export function buildFfmpegArgs(caps: FfmpegCapabilities, s: StreamArgs): string
     width: clampDimension(s.scale.width, ADVERTISED_MAX.width),
     height: clampDimension(s.scale.height, ADVERTISED_MAX.height),
   }
-  const fps = s.fps === undefined ? undefined : clampFps(s.fps)
+  const fps = s.fps === undefined
+    ? undefined
+    : clampFps(s.fps)
 
   const input: string[] = ['-hide_banner', '-loglevel', 'warning']
   if (scale) {
@@ -217,10 +225,17 @@ export function buildFfmpegArgs(caps: FfmpegCapabilities, s: StreamArgs): string
   // it needs a second output aimed at the port HomeKit prepared for it. Without
   // audio the input's audio track is dropped outright.
   const video = [
-    ...(s.audio ? ['-map', '0:v:0'] : ['-an']),
+    ...(s.audio
+      ? ['-map', '0:v:0']
+      : ['-an']),
     // Like `-r` below, an OUTPUT option: it must precede `-f rtp` and the
     // output URL or ffmpeg never applies it.
-    ...(scale ? ['-vf', scaleFilter(caps, scale)] : []),
+    ...(scale
+      ? [
+          '-vf',
+          scaleFilter(caps, scale),
+        ]
+      : []),
     '-c:v',
     caps.encoder,
     '-b:v',
@@ -233,7 +248,12 @@ export function buildFfmpegArgs(caps: FfmpegCapabilities, s: StreamArgs): string
     // must sit here, before `-f rtp` — after the output URL it is dangling and
     // never reaches the encoder. This is the frame-rate padding the package
     // lens depends on to avoid looking like a stalled stream to HomeKit.
-    ...(fps !== undefined ? ['-r', String(fps)] : []),
+    ...(fps !== undefined
+      ? [
+          '-r',
+          String(fps),
+        ]
+      : []),
     '-f',
     'rtp',
     '-srtp_out_suite',
@@ -243,13 +263,29 @@ export function buildFfmpegArgs(caps: FfmpegCapabilities, s: StreamArgs): string
     destination(s.address, s.video, 1316),
   ]
 
-  if (!s.audio)
-    return [...input, ...video]
+  if (!s.audio) {
+    return [
+      ...input,
+      ...video,
+    ]
+  }
 
   // Opus wants low-delay framing; AAC-ELD wants its profile named.
   const codec = s.audio.codec === 'opus'
-    ? ['-c:a', AUDIO_CODECS.opus.encoder, '-application', 'lowdelay', '-frame_duration', '20']
-    : ['-c:a', AUDIO_CODECS['aac-eld'].encoder, '-profile:a', 'aac_eld']
+    ? [
+        '-c:a',
+        AUDIO_CODECS.opus.encoder,
+        '-application',
+        'lowdelay',
+        '-frame_duration',
+        '20',
+      ]
+    : [
+        '-c:a',
+        AUDIO_CODECS['aac-eld'].encoder,
+        '-profile:a',
+        'aac_eld',
+      ]
 
   const audio = [
     // `0:a:0?` — the `?` matters: a Protect camera with no microphone has no
@@ -278,7 +314,11 @@ export function buildFfmpegArgs(caps: FfmpegCapabilities, s: StreamArgs): string
     destination(s.address, s.audio, 188),
   ]
 
-  return [...input, ...video, ...audio]
+  return [
+    ...input,
+    ...video,
+    ...audio,
+  ]
 }
 
 export interface CameraStreamSettings {
@@ -483,7 +523,9 @@ export class StreamingDelegate implements CameraStreamingDelegate {
     if (this.snapshotCache && now - this.snapshotCache.at < SNAPSHOT_TTL_MS)
       return this.snapshotCache.jpeg
     try {
-      const jpeg = await this.options.client.getSnapshot(this.options.deviceId, this.options.channel === 'package' ? { channel: 'package' } : {})
+      const jpeg = await this.options.client.getSnapshot(this.options.deviceId, this.options.channel === 'package'
+        ? { channel: 'package' }
+        : {})
       this.snapshotCache = { at: now, jpeg }
       return jpeg
     }
@@ -546,7 +588,14 @@ export class StreamingDelegate implements CameraStreamingDelegate {
     const twoWay = talkback && codec === 'opus'
     if (!settings.audio && !twoWay)
       return undefined
-    return { codecs: [audioStreamingCodec(codec)], ...(twoWay ? { twoWayAudio: true } : {}) }
+    return {
+      codecs: [
+        audioStreamingCodec(codec),
+      ],
+      ...(twoWay
+        ? { twoWayAudio: true }
+        : {}),
+    }
   }
 
   /**
@@ -577,8 +626,14 @@ export class StreamingDelegate implements CameraStreamingDelegate {
       // that ffmpeg's audio RTCP leaves from an ephemeral port instead; the
       // reports HomeKit sends back were already landing on our socket, where
       // the relay drops them as non-RTP.
-      const target = rtp.audioSocket ? { ...rtp.audio, localPort: undefined } : rtp.audio
-      return { ...target, ...request.audio, codec }
+      const target = rtp.audioSocket
+        ? { ...rtp.audio, localPort: undefined }
+        : rtp.audio
+      return {
+        ...target,
+        ...request.audio,
+        codec,
+      }
     }
     if (!this.warnedAboutAudio) {
       this.warnedAboutAudio = true
@@ -649,7 +704,9 @@ export class StreamingDelegate implements CameraStreamingDelegate {
         // 30 fps throughout, and padding to a hardcoded 15 would under-deliver
         // against what the controller was told it would get.
         fps: isPackage ? request.fps : undefined,
-        scale: isPackage ? { width: request.width, height: request.height } : undefined,
+        scale: isPackage
+          ? { width: request.width, height: request.height }
+          : undefined,
       })
       const proc: FfmpegProcess = new FfmpegProcess({
         path: this.options.caps.path,
@@ -749,7 +806,11 @@ export class StreamingDelegate implements CameraStreamingDelegate {
     // `prepared` too, not just `sessions`: a session that was prepared and never
     // started still holds a bound talkback socket, and `talkback` because an
     // entry retained by a failed kill has already left `prepared`.
-    for (const id of new Set([...this.sessions.keys(), ...this.talkback.keys(), ...this.prepared.keys()]))
+    for (const id of new Set([
+      ...this.sessions.keys(),
+      ...this.talkback.keys(),
+      ...this.prepared.keys(),
+    ]))
       this.stopSession(id)
   }
 
@@ -827,7 +888,12 @@ export class StreamingDelegate implements CameraStreamingDelegate {
       spawn: this.options.spawn,
       // On stdin, so the session key never touches disk. Nothing here — the SDP
       // or the arguments — may reach a log.
-      stdin: talkbackSdp({ listenPort, payloadType: audio.payloadType, key: audio.key, ipv6 }),
+      stdin: talkbackSdp({
+        listenPort,
+        payloadType: audio.payloadType,
+        key: audio.key,
+        ipv6,
+      }),
       counted: false,
       onExit: () => {
         if (state.proc === proc)
@@ -875,7 +941,10 @@ export class StreamingDelegate implements CameraStreamingDelegate {
     const audioBind = this.talkbackEnabled()
       ? (this.options.bind ?? bindPort)(ipv6)
       : reservePort(ipv6).then(port => ({ port, socket: undefined }))
-    Promise.all([reservePort(ipv6), audioBind]).then(
+    Promise.all([
+      reservePort(ipv6),
+      audioBind,
+    ]).then(
       ([videoLocalPort, audio]) => {
         const audioLocalPort = audio.port
         const rtp: SessionRtp = {
@@ -974,7 +1043,9 @@ export class StreamingDelegate implements CameraStreamingDelegate {
         // accumulates one file descriptor per tap.
         if (!started)
           this.stopSession(request.sessionID)
-        callback(started ? undefined : new Error(`Could not start a stream for "${this.options.label}".`))
+        callback(started
+          ? undefined
+          : new Error(`Could not start a stream for "${this.options.label}".`))
       },
       (error) => {
         this.stopSession(request.sessionID)

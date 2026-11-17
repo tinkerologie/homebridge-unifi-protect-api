@@ -16,7 +16,11 @@ function createFixture(changelog: string): string {
 
 function runFailure(version: string, changelog: string) {
   const directory = createFixture(changelog)
-  return spawnSync(process.execPath, [script, version, join(directory, 'notes.md')], {
+  return spawnSync(process.execPath, [
+    script,
+    version,
+    join(directory, 'notes.md'),
+  ], {
     cwd: directory,
     encoding: 'utf8',
   })
@@ -73,7 +77,13 @@ it.each([
     '- Foundation.',
     '',
   ].join(lineEnding)
-  const expected = [`${fence}markdown`, '## Example heading', fence, '', '- Still release notes.'].join(lineEnding)
+  const expected = [
+    `${fence}markdown`,
+    '## Example heading',
+    fence,
+    '',
+    '- Still release notes.',
+  ].join(lineEnding)
 
   expect(runSuccess('1.0.0', changelog)).toBe(`${expected}\n`)
 })

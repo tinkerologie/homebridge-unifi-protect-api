@@ -8,7 +8,12 @@ import { execFileSync } from 'node:child_process'
 import process from 'node:process'
 
 const path = process.argv[2] ?? 'ffmpeg'
-const run = args => execFileSync(path, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+function run(args) {
+  return execFileSync(path, args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+}
 
 const out = {
   // The version line names the build, which is how a human tells these fixtures

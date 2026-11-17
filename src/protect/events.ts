@@ -214,7 +214,9 @@ export class ProtectEvents extends EventEmitter<ProtectEventsMap> {
     socket.onmessage = (event: { data: unknown }) => {
       let payload: unknown
       try {
-        payload = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data))
+        payload = JSON.parse(typeof event.data === 'string'
+          ? event.data
+          : String(event.data))
       }
       catch {
         this.log.debug(`Discarding unparseable frame on the ${channel} subscription.`)
@@ -224,10 +226,14 @@ export class ProtectEvents extends EventEmitter<ProtectEventsMap> {
       // most likely, after a firmware change alters a shape — must not become an
       // uncaught exception inside `ws` and take Homebridge down with it.
       try {
-        this.emit(channel === 'devices' ? 'deviceUpdate' : 'protectEvent', payload)
+        this.emit(channel === 'devices'
+          ? 'deviceUpdate'
+          : 'protectEvent', payload)
       }
       catch (error) {
-        this.log.warn(`A ${channel} subscription listener threw: ${error instanceof Error ? error.message : String(error)}`)
+        this.log.warn(`A ${channel} subscription listener threw: ${error instanceof Error
+          ? error.message
+          : String(error)}`)
       }
     }
 

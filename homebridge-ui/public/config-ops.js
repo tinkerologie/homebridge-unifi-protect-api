@@ -3,7 +3,12 @@
 // Must track `defaultsSchema` in src/config.ts: `ensureConfig` writes these into
 // config.json on every UI save, so a stale value here silently overrides the
 // plugin's own default for every user who touches the settings page.
-export const DEFAULTS = { exposeNewDevices: true, quality: 'auto', hksv: false, icloudTier: '200gb' }
+export const DEFAULTS = {
+  exposeNewDevices: true,
+  quality: 'auto',
+  hksv: false,
+  icloudTier: '200gb',
+}
 
 /** Cameras each iCloud tier permits to record. Apple caps by COUNT, not storage. */
 export const RECORDING_LIMITS = { '50gb': 1, '200gb': 5, '2tb': Number.POSITIVE_INFINITY }
@@ -32,9 +37,17 @@ export function ensureConfig(raw) {
     name: config.name ?? 'UniFi Protect',
     host: config.host ?? '',
     apiKey: config.apiKey ?? '',
-    defaults: { ...DEFAULTS, ...(config.defaults ?? {}), icloudTier: parseIcloudTier(config.defaults?.icloudTier) },
-    devices: { ...(config.devices ?? {}) },
-    discoveredDevices: Array.isArray(config.discoveredDevices) ? [...config.discoveredDevices] : [],
+    defaults: {
+      ...DEFAULTS,
+      ...(config.defaults ?? {}),
+      icloudTier: parseIcloudTier(config.defaults?.icloudTier),
+    },
+    devices: {
+      ...(config.devices ?? {}),
+    },
+    discoveredDevices: Array.isArray(config.discoveredDevices)
+      ? [...config.discoveredDevices]
+      : [],
   }
 }
 
@@ -47,7 +60,9 @@ export function ensureConfig(raw) {
  * failure `parseMaxStreams` already exists to prevent.
  */
 export function parseIcloudTier(raw) {
-  return Object.hasOwn(RECORDING_LIMITS, raw) ? raw : DEFAULTS.icloudTier
+  return Object.hasOwn(RECORDING_LIMITS, raw)
+    ? raw
+    : DEFAULTS.icloudTier
 }
 
 /**
@@ -443,7 +458,9 @@ export function clearDeviceSetting(config, deviceId, key) {
  */
 export function setDeviceSetting(config, deviceId, key, value) {
   const devices = { ...config.devices }
-  const entry = { ...(devices[deviceId] ?? {}) }
+  const entry = {
+    ...(devices[deviceId] ?? {}),
+  }
 
   if (same(value, defaultFor(config, key)))
     delete entry[key]
@@ -464,5 +481,8 @@ export function setDeviceSetting(config, deviceId, key, value) {
  * Pure transform - the caller is responsible for persisting the result.
  */
 export function setDiscoveredDevices(config, devices) {
-  return { ...config, discoveredDevices: [...devices] }
+  return {
+    ...config,
+    discoveredDevices: [...devices],
+  }
 }

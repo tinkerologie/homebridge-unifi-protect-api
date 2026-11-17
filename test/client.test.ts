@@ -20,7 +20,11 @@ function fixture(name: string) {
 }
 
 function jsonResponse(payload: unknown, status = 200, headers: Record<string, string> = {}): HttpResponse {
-  return { status, headers, body: Buffer.from(JSON.stringify(payload)) }
+  return {
+    status,
+    headers,
+    body: Buffer.from(JSON.stringify(payload)),
+  }
 }
 
 interface Harness {
@@ -77,7 +81,9 @@ describe('protectClient requests', () => {
     expect(options.headers['Content-Type']).toBe('application/json')
     // Without this node falls back to Transfer-Encoding: chunked.
     expect(options.headers['Content-Length']).toBe(String(Buffer.byteLength(options.body)))
-    expect(JSON.parse(options.body)).toEqual({ qualities: ['high'] })
+    expect(JSON.parse(options.body)).toEqual({
+      qualities: ['high'],
+    })
   })
 
   it('parses the fixtures for every list endpoint without warning', async () => {
@@ -139,13 +145,21 @@ describe('protectClient error mapping', () => {
     [500, ProtectUnavailableError],
     [503, ProtectUnavailableError],
   ])('maps %i to the right typed error', async (status, expected) => {
-    const { client } = harness(async () => ({ status, headers: {}, body: Buffer.alloc(0) }))
+    const { client } = harness(async () => ({
+      status,
+      headers: {},
+      body: Buffer.alloc(0),
+    }))
 
     await expect(client.getCamera('cam1')).rejects.toBeInstanceOf(expected)
   })
 
   it('maps an unexpected 4xx to the base ProtectError so it is not retried', async () => {
-    const { client } = harness(async () => ({ status: 400, headers: {}, body: Buffer.alloc(0) }))
+    const { client } = harness(async () => ({
+      status: 400,
+      headers: {},
+      body: Buffer.alloc(0),
+    }))
 
     const error = await client.getCamera('cam1').catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ProtectError)
@@ -153,14 +167,22 @@ describe('protectClient error mapping', () => {
   })
 
   it('parses Retry-After seconds into retryAfterMs', async () => {
-    const { client } = harness(async () => ({ status: 429, headers: { 'retry-after': '7' }, body: Buffer.alloc(0) }))
+    const { client } = harness(async () => ({
+      status: 429,
+      headers: { 'retry-after': '7' },
+      body: Buffer.alloc(0),
+    }))
 
     const error = await client.getCameras().catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ProtectRateLimitError)
     expect((error as ProtectRateLimitError).retryAfterMs).toBe(7000)
   })
 
-  it.each([['Wed, 21 Oct 2026 07:28:00 GMT'], [''], ['0']])(
+  it.each([
+    ['Wed, 21 Oct 2026 07:28:00 GMT'],
+    [''],
+    ['0'],
+  ])(
     'ignores a Retry-After of %o rather than producing NaN or a zero-delay retry storm',
     async (value) => {
       const { client } = harness(async () => ({
@@ -175,7 +197,11 @@ describe('protectClient error mapping', () => {
   )
 
   it('caps an absurd Retry-After so a queue slot is not parked for an hour', async () => {
-    const { client } = harness(async () => ({ status: 429, headers: { 'retry-after': '3600' }, body: Buffer.alloc(0) }))
+    const { client } = harness(async () => ({
+      status: 429,
+      headers: { 'retry-after': '3600' },
+      body: Buffer.alloc(0),
+    }))
 
     const error = await client.getCameras().catch((e: unknown) => e)
     expect((error as ProtectRateLimitError).retryAfterMs).toBe(60_000)
@@ -204,13 +230,21 @@ describe('protectClient error mapping', () => {
     expect(inspect(error)).not.toContain(API_KEY)
 
     const { client: authClient, log: authLog } = harness(async () =>
-      ({ status: 401, headers: {}, body: Buffer.from('nope') }))
+      ({
+        status: 401,
+        headers: {},
+        body: Buffer.from('nope'),
+      }))
     const authError = await authClient.getCameras().catch((e: unknown) => e)
     expect(inspect(authError)).not.toContain(API_KEY)
 
     // A console that echoes the key in a malformed error body must not leak either.
     const { client: junkClient } = harness(async () =>
-      ({ status: 200, headers: {}, body: Buffer.from(`<html>${API_KEY}</html>`) }))
+      ({
+        status: 200,
+        headers: {},
+        body: Buffer.from(`<html>${API_KEY}</html>`),
+      }))
     const junkError = await junkClient.getCameras().catch((e: unknown) => e)
     expect(inspect(junkError)).not.toContain(API_KEY)
 
@@ -225,7 +259,11 @@ describe('protectClient error mapping', () => {
 
 describe('protectClient validation degrades instead of throwing', () => {
   it('returns the raw payload and warns exactly once across two calls', async () => {
-    const broken = { ...fixture('cameras')[0], state: 'WOBBLY', id: 12345 }
+    const broken = {
+      ...fixture('cameras')[0],
+      state: 'WOBBLY',
+      id: 12345,
+    }
     const { client, log } = harness(async () => jsonResponse(broken))
 
     const first = await client.getCamera('cam1')
@@ -240,7 +278,10 @@ describe('protectClient validation degrades instead of throwing', () => {
     // existingRtspsStreamsSchema is one of only two strictObject schemas in the
     // whole API, so an unknown key is a hard validation failure. Stream lookup
     // must survive it.
-    const payload = { ...fixture('rtsps-stream'), ultra: 'rtsps://192.168.10.1:7441/zzz?enableSrtp' }
+    const payload = {
+      ...fixture('rtsps-stream'),
+      ultra: 'rtsps://192.168.10.1:7441/zzz?enableSrtp',
+    }
     const { client, log } = harness(async () => jsonResponse(payload))
 
     const streams = await client.getRtspsStream('cam1')
@@ -252,7 +293,10 @@ describe('protectClient validation degrades instead of throwing', () => {
 
   it('keeps the good devices when one item in a list is malformed', async () => {
     const [good] = fixture('cameras')
-    const { client, log } = harness(async () => jsonResponse([good, { id: 42 }]))
+    const { client, log } = harness(async () => jsonResponse([
+      good,
+      { id: 42 },
+    ]))
 
     const cameras = await client.getCameras()
 
@@ -268,7 +312,11 @@ describe('protectClient validation degrades instead of throwing', () => {
   })
 
   it('treats an empty body from a list endpoint as the console being unavailable', async () => {
-    const { client } = harness(async () => ({ status: 200, headers: {}, body: Buffer.alloc(0) }))
+    const { client } = harness(async () => ({
+      status: 200,
+      headers: {},
+      body: Buffer.alloc(0),
+    }))
 
     await expect(client.getCameras()).rejects.toBeInstanceOf(ProtectUnavailableError)
   })
@@ -276,7 +324,16 @@ describe('protectClient validation degrades instead of throwing', () => {
 
 describe('protectClient snapshots', () => {
   it('returns the raw Buffer without JSON parsing', async () => {
-    const jpeg = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46])
+    const jpeg = Buffer.from([
+      0xFF,
+      0xD8,
+      0xFF,
+      0xE0,
+      0x00,
+      0x10,
+      0x4A,
+      0x46,
+    ])
     const { client, http } = harness(async () => ({
       status: 200,
       headers: { 'content-type': 'image/jpeg' },
@@ -293,7 +350,11 @@ describe('protectClient snapshots', () => {
   })
 
   it('omits the query string entirely when no options are given', async () => {
-    const { client, http } = harness(async () => ({ status: 200, headers: {}, body: Buffer.from('x') }))
+    const { client, http } = harness(async () => ({
+      status: 200,
+      headers: {},
+      body: Buffer.from('x'),
+    }))
 
     await client.getSnapshot('cam1')
 

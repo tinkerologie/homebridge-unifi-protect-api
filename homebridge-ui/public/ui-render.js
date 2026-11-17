@@ -72,7 +72,9 @@ export function renderTabs(doc, labels) {
       const on = i === index
       b.setAttribute('aria-selected', String(on))
       b.className = on ? 'nav-link active' : 'nav-link'
-      b.tabIndex = on ? 0 : -1
+      b.tabIndex = on
+        ? 0
+        : -1
       panes[i].style.display = on ? '' : 'none'
       if (on && focus)
         b.focus?.()
@@ -85,7 +87,13 @@ export function renderTabs(doc, labels) {
   return { tablist, panes, buttons, select }
 }
 
-const GROUP_LABELS = { camera: 'Cameras', light: 'Lights', sensor: 'Sensors', chime: 'Chimes', viewer: 'Viewers' }
+const GROUP_LABELS = {
+  camera: 'Cameras',
+  light: 'Lights',
+  sensor: 'Sensors',
+  chime: 'Chimes',
+  viewer: 'Viewers',
+}
 
 /**
  * A list, not a card per device: with every device expanded the page grew
@@ -130,14 +138,24 @@ export function renderDeviceList(doc, devices, onSelect) {
   }
   const filter = (term) => {
     const needle = term.trim().toLowerCase()
-    for (const row of rowEls)
-      row.style.display = row.textContent.toLowerCase().includes(needle) ? '' : 'none'
+    for (const row of rowEls) {
+      row.style.display = row.textContent.toLowerCase().includes(needle)
+        ? ''
+        : 'none'
+    }
     // A heading over nothing is worse than no heading: filtering to one camera
     // otherwise still shows SENSORS and CHIMES with empty space under them.
-    for (const group of groups)
-      group.heading.style.display = group.rows.some(row => row.style.display !== 'none') ? '' : 'none'
+    for (const group of groups) {
+      group.heading.style.display = group.rows.some(row => row.style.display !== 'none')
+        ? ''
+        : 'none'
+    }
   }
-  return { list, filter, rows: () => rowEls }
+  return {
+    list,
+    filter,
+    rows: () => rowEls,
+  }
 }
 
 /**
@@ -162,12 +180,19 @@ export function renderBadge(doc, overridden, onReset, label = '') {
   reset.type = 'button'
   reset.className = 'btn btn-link btn-sm p-0 ms-2'
   reset.textContent = 'reset'
-  reset.setAttribute('aria-label', label ? `Reset ${label} to the default` : 'Reset to the default')
+  reset.setAttribute('aria-label', label
+    ? `Reset ${label} to the default`
+    : 'Reset to the default')
   reset.addEventListener('click', () => onReset())
   return { badge, reset }
 }
 
-const SECTIONS = ['General', 'Live view', 'Recording', 'Extra accessories']
+const SECTIONS = [
+  'General',
+  'Live view',
+  'Recording',
+  'Extra accessories',
+]
 
 // Section labels need ids for `aria-labelledby`, and the ids have to be unique
 // across every pane ever built in this document - a counter is the only source

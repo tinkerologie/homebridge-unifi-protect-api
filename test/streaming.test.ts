@@ -24,8 +24,12 @@ function encoderList(has: { opus?: boolean, aacEld?: boolean } = {}): string {
     // Both names appear in a DESCRIPTION here, not in the encoder column. A bare
     // substring test would call this a hit and hand ffmpeg an encoder it lacks.
     ' A..... aac                  AAC (Advanced Audio Coding) (alternatives: libfdk_aac libopus)',
-    ...(has.aacEld ? [' A..... libfdk_aac           Fraunhofer FDK AAC'] : []),
-    ...(has.opus ? [' A..... libopus              libopus Opus'] : []),
+    ...(has.aacEld
+      ? [' A..... libfdk_aac           Fraunhofer FDK AAC']
+      : []),
+    ...(has.opus
+      ? [' A..... libopus              libopus Opus']
+      : []),
   ].join('\n')
 }
 
@@ -72,11 +76,31 @@ describe('buildFfmpegArgs', () => {
     url: URL,
     bitrate: 3000,
     address: '192.0.2.9',
-    video: { port: 5000, ssrc: 1, key: Buffer.alloc(30), payloadType: 99, localPort: 5001 },
+    video: {
+      port: 5000,
+      ssrc: 1,
+      key: Buffer.alloc(30),
+      payloadType: 99,
+      localPort: 5001,
+    },
   }
-  const audioTarget = { port: 5002, ssrc: 2, key: Buffer.alloc(30, 7), payloadType: 110, sampleRate: 24, bitrate: 24, localPort: 5003 }
-  const withAudio: StreamArgs = { ...base, audio: { ...audioTarget, codec: 'opus' } }
-  const withAacEld: StreamArgs = { ...base, audio: { ...audioTarget, codec: 'aac-eld' } }
+  const audioTarget = {
+    port: 5002,
+    ssrc: 2,
+    key: Buffer.alloc(30, 7),
+    payloadType: 110,
+    sampleRate: 24,
+    bitrate: 24,
+    localPort: 5003,
+  }
+  const withAudio: StreamArgs = {
+    ...base,
+    audio: { ...audioTarget, codec: 'opus' },
+  }
+  const withAacEld: StreamArgs = {
+    ...base,
+    audio: { ...audioTarget, codec: 'aac-eld' },
+  }
 
   it('uses hardware flags when the probe found hardware', () => {
     const args = buildFfmpegArgs(CAPS_HW, base)
@@ -195,8 +219,21 @@ describe('the advertised codec and the produced codec', () => {
         url: URL,
         bitrate: 3000,
         address: '192.0.2.9',
-        video: { port: 5000, ssrc: 1, key: Buffer.alloc(30), payloadType: 99 },
-        audio: { port: 5002, ssrc: 2, key: Buffer.alloc(30), payloadType: 110, sampleRate: 24, bitrate: 24, codec },
+        video: {
+          port: 5000,
+          ssrc: 1,
+          key: Buffer.alloc(30),
+          payloadType: 99,
+        },
+        audio: {
+          port: 5002,
+          ssrc: 2,
+          key: Buffer.alloc(30),
+          payloadType: 110,
+          sampleRate: 24,
+          bitrate: 24,
+          codec,
+        },
       })
       expect(args.join(' ')).toContain(expected[codec].flag)
     })
@@ -236,7 +273,12 @@ function fakeChild(record?: ChildRecord): ChildProcess {
 }
 
 function makeLog() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }
 }
 
 interface DelegateOverrides {
@@ -261,11 +303,18 @@ interface DelegateOverrides {
 const jpeg = Buffer.from('jpeg-bytes')
 
 /** What the reference Doorbell answers: plain RTP, the CAMERA's own IP, its own rate. */
-const TALKBACK_SESSION = { url: 'rtp://192.168.10.9:7004', codec: 'opus', samplingRate: 24000, bitsPerSample: 16 }
+const TALKBACK_SESSION = {
+  url: 'rtp://192.168.10.9:7004',
+  codec: 'opus',
+  samplingRate: 24000,
+  bitsPerSample: 16,
+}
 
 /** The API key hides in `cause`, exactly where util.inspect finds it. */
 async function failingSnapshot(): Promise<Buffer> {
-  throw Object.assign(new Error('403'), { cause: { apiKey: 'SECRET-KEY' } })
+  throw Object.assign(new Error('403'), {
+    cause: { apiKey: 'SECRET-KEY' },
+  })
 }
 
 async function failingUrl(): Promise<string> {
@@ -318,7 +367,10 @@ function makeDelegate(overrides: DelegateOverrides = {}) {
     log,
     client: { getSnapshot, createTalkbackSession } as never,
     bind: (overrides.realBind ? undefined : bind) as never,
-    urls: { get, clear: vi.fn() } as never,
+    urls: {
+      get,
+      clear: vi.fn(),
+    } as never,
     caps: overrides.caps ?? CAPS_HW,
     settings: () => ({ quality: overrides.quality ?? 'auto', audio: overrides.audio ?? false, talkback: overrides.talkback ?? false }),
     spawn,
@@ -327,13 +379,32 @@ function makeDelegate(overrides: DelegateOverrides = {}) {
     channel: overrides.channel,
     hasSpeaker: overrides.hasSpeaker,
   })
-  return { delegate, getSnapshot, get, spawn, run, log, createTalkbackSession, bind }
+  return {
+    delegate,
+    getSnapshot,
+    get,
+    spawn,
+    run,
+    log,
+    createTalkbackSession,
+    bind,
+  }
 }
 
 const RTP = {
   address: '192.0.2.9',
-  video: { port: 5000, ssrc: 7, key: Buffer.alloc(30), localPort: 5001 },
-  audio: { port: 5002, ssrc: 8, key: Buffer.alloc(30, 7), localPort: 5003 },
+  video: {
+    port: 5000,
+    ssrc: 7,
+    key: Buffer.alloc(30),
+    localPort: 5001,
+  },
+  audio: {
+    port: 5002,
+    ssrc: 8,
+    key: Buffer.alloc(30, 7),
+    localPort: 5003,
+  },
 }
 const REQUEST = {
   width: 1280,
@@ -417,7 +488,12 @@ describe('streamingDelegate sessions', () => {
     expect(args).toContain(URL)
 
     // The URL is a credential. Nothing on any log level may contain it.
-    const everything = JSON.stringify([log.info.mock.calls, log.warn.mock.calls, log.debug.mock.calls, log.error.mock.calls])
+    const everything = JSON.stringify([
+      log.info.mock.calls,
+      log.warn.mock.calls,
+      log.debug.mock.calls,
+      log.error.mock.calls,
+    ])
     expect(everything).not.toContain('SENTINEL')
     expect(everything).not.toContain('rtsps://')
     delegate.stopAll()
@@ -441,11 +517,13 @@ describe('streamingDelegate sessions', () => {
       label: 'Driveway',
       log,
       client: {} as never,
-      urls: { get: async () => {
-        if (fail)
-          throw new Error('console said no')
-        return URL
-      } } as never,
+      urls: {
+        get: async () => {
+          if (fail)
+            throw new Error('console said no')
+          return URL
+        },
+      } as never,
       caps: CAPS_SW,
       settings: () => ({ quality: 'auto', audio: false, talkback: false }),
       spawn,
@@ -614,14 +692,20 @@ describe('streamingDelegate sessions', () => {
   })
 
   it('encodes with the codec the probe found, and advertises that same one', async () => {
-    const opus = makeDelegate({ audio: true, encoders: { opus: true } })
+    const opus = makeDelegate({
+      audio: true,
+      encoders: { opus: true },
+    })
     await opus.delegate.startSession('a', REQUEST, RTP)
     expect(argvOf(opus.spawn).join(' ')).toContain('-c:a libopus')
     expect((await opus.delegate.audioStreamingOptions())?.codecs[0]?.type).toBe('OPUS')
     opus.delegate.stopAll()
 
     // The bundled static build: AAC-ELD only.
-    const aac = makeDelegate({ audio: true, encoders: { aacEld: true } })
+    const aac = makeDelegate({
+      audio: true,
+      encoders: { aacEld: true },
+    })
     await aac.delegate.startSession('a', REQUEST, RTP)
     expect(argvOf(aac.spawn).join(' ')).toContain('-c:a libfdk_aac')
     expect((await aac.delegate.audioStreamingOptions())?.codecs[0]?.type).toBe('AAC-eld')
@@ -629,7 +713,9 @@ describe('streamingDelegate sessions', () => {
   })
 
   it('advertises nothing when the camera has audio switched off', async () => {
-    const { delegate } = makeDelegate({ encoders: { opus: true } })
+    const { delegate } = makeDelegate({
+      encoders: { opus: true },
+    })
     expect(await delegate.audioStreamingOptions()).toBeUndefined()
   })
 
@@ -639,24 +725,45 @@ describe('streamingDelegate sessions', () => {
   // audio machinery talkback needs, when no codec is advertised at all.
   // Sending the microphone itself stays gated by `audio` in startSession.
   it('advertises two-way audio when talkback is on and audio is off', async () => {
-    const { delegate } = makeDelegate({ audio: false, talkback: true, hasSpeaker: true, encoders: { opus: true } })
+    const { delegate } = makeDelegate({
+      audio: false,
+      talkback: true,
+      hasSpeaker: true,
+      encoders: { opus: true },
+    })
     const options = await delegate.audioStreamingOptions()
     expect(options?.twoWayAudio).toBe(true)
     expect(options?.codecs.length).toBeGreaterThan(0)
   })
 
   it('stays silent when neither audio nor talkback is on', async () => {
-    const { delegate } = makeDelegate({ audio: false, talkback: false, hasSpeaker: true, encoders: { opus: true } })
+    const { delegate } = makeDelegate({
+      audio: false,
+      talkback: false,
+      hasSpeaker: true,
+      encoders: { opus: true },
+    })
     expect(await delegate.audioStreamingOptions()).toBeUndefined()
   })
 
   it('does not advertise two-way audio without a speaker', async () => {
-    const { delegate } = makeDelegate({ audio: false, talkback: true, hasSpeaker: false, encoders: { opus: true } })
+    const { delegate } = makeDelegate({
+      audio: false,
+      talkback: true,
+      hasSpeaker: false,
+      encoders: { opus: true },
+    })
     expect(await delegate.audioStreamingOptions()).toBeUndefined()
   })
 
   it('never advertises two-way audio on the package lens', async () => {
-    const { delegate } = makeDelegate({ audio: true, talkback: true, hasSpeaker: true, channel: 'package', encoders: { opus: true } })
+    const { delegate } = makeDelegate({
+      audio: true,
+      talkback: true,
+      hasSpeaker: true,
+      channel: 'package',
+      encoders: { opus: true },
+    })
     expect(await delegate.audioStreamingOptions()).toBeUndefined()
   })
 
@@ -665,19 +772,34 @@ describe('streamingDelegate sessions', () => {
   // sends AAC-ELD, and the doorbell speaker plays garbage with no error
   // anywhere. The container's bundled static build is exactly that ffmpeg.
   it('does not advertise two-way audio when the chosen codec is not opus', async () => {
-    const { delegate } = makeDelegate({ audio: true, talkback: true, hasSpeaker: true, encoders: { aacEld: true } })
+    const { delegate } = makeDelegate({
+      audio: true,
+      talkback: true,
+      hasSpeaker: true,
+      encoders: { aacEld: true },
+    })
     const options = await delegate.audioStreamingOptions()
     expect(options?.codecs[0]?.type).toBe('AAC-eld')
     expect(options?.twoWayAudio).toBeFalsy()
   })
 
   it('advertises nothing at all when talkback is the only reason to and opus is missing', async () => {
-    const { delegate } = makeDelegate({ audio: false, talkback: true, hasSpeaker: true, encoders: { aacEld: true } })
+    const { delegate } = makeDelegate({
+      audio: false,
+      talkback: true,
+      hasSpeaker: true,
+      encoders: { aacEld: true },
+    })
     expect(await delegate.audioStreamingOptions()).toBeUndefined()
   })
 
   it('does not advertise twoWayAudio when audio is on but talkback is off', async () => {
-    const { delegate } = makeDelegate({ audio: true, talkback: false, hasSpeaker: true, encoders: { opus: true } })
+    const { delegate } = makeDelegate({
+      audio: true,
+      talkback: false,
+      hasSpeaker: true,
+      encoders: { opus: true },
+    })
     const options = await delegate.audioStreamingOptions()
     expect(options?.twoWayAudio).toBeFalsy()
   })
@@ -718,8 +840,18 @@ function prepareRequest(): PrepareStreamRequest {
     sourceAddress: '192.0.2.20',
     targetAddress: '192.0.2.9',
     addressVersion: 'ipv4',
-    video: { port: 5000, srtpCryptoSuite: 0, srtp_key: Buffer.alloc(16, 1), srtp_salt: Buffer.alloc(14, 2) },
-    audio: { port: 5002, srtpCryptoSuite: 0, srtp_key: Buffer.alloc(16, 3), srtp_salt: Buffer.alloc(14, 4) },
+    video: {
+      port: 5000,
+      srtpCryptoSuite: 0,
+      srtp_key: Buffer.alloc(16, 1),
+      srtp_salt: Buffer.alloc(14, 2),
+    },
+    audio: {
+      port: 5002,
+      srtpCryptoSuite: 0,
+      srtp_key: Buffer.alloc(16, 3),
+      srtp_salt: Buffer.alloc(14, 4),
+    },
   }
 }
 
@@ -727,8 +859,29 @@ function startRequest(): StreamingRequest {
   return {
     sessionID: 'session-1',
     type: 'start',
-    video: { width: 1280, height: 720, fps: 30, max_bit_rate: 802, ssrc: 1, pt: 97, mtu: 1378, rtcp_interval: 0.5 },
-    audio: { codec: 'AAC-eld', channel: 1, bit_rate: 0, sample_rate: 16, packet_time: 30, pt: 110, ssrc: 2, max_bit_rate: 24, rtcp_interval: 5, comfort_pt: 13, comfortNoiseEnabled: false },
+    video: {
+      width: 1280,
+      height: 720,
+      fps: 30,
+      max_bit_rate: 802,
+      ssrc: 1,
+      pt: 97,
+      mtu: 1378,
+      rtcp_interval: 0.5,
+    },
+    audio: {
+      codec: 'AAC-eld',
+      channel: 1,
+      bit_rate: 0,
+      sample_rate: 16,
+      packet_time: 30,
+      pt: 110,
+      ssrc: 2,
+      max_bit_rate: 24,
+      rtcp_interval: 5,
+      comfort_pt: 13,
+      comfortNoiseEnabled: false,
+    },
   } as unknown as StreamingRequest
 }
 
@@ -736,7 +889,9 @@ describe('streamingDelegate hap wiring', () => {
   it('prepareStream returns a port, an ssrc and the srtp material homekit sent, for both streams', async () => {
     const { delegate } = makeDelegate()
     const response = await new Promise<PrepareStreamResponse>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), (error, r) => (r ? resolve(r) : reject(error)))
+      delegate.prepareStream(prepareRequest(), (error, r) => (r
+        ? resolve(r)
+        : reject(error)))
     })
     const video = response.video as SourceResponse
     const audio = response.audio as SourceResponse
@@ -757,10 +912,14 @@ describe('streamingDelegate hap wiring', () => {
   it('start uses the prepared session and homekit payload types, and stop kills it', async () => {
     const { delegate, spawn } = makeDelegate({ audio: true })
     await new Promise<void>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), error => (error ? reject(error) : resolve()))
+      delegate.prepareStream(prepareRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
     await new Promise<void>((resolve, reject) => {
-      delegate.handleStreamRequest(startRequest(), error => (error ? reject(error) : resolve()))
+      delegate.handleStreamRequest(startRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
     const joined = argvOf(spawn).join(' ')
     // The destinations are the addresses and ports HomeKit asked for.
@@ -791,15 +950,21 @@ describe('streamingDelegate hap wiring', () => {
       },
     })
     await new Promise<void>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), error => (error ? reject(error) : resolve()))
+      delegate.prepareStream(prepareRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
     await new Promise<void>((resolve, reject) => {
-      delegate.handleStreamRequest(startRequest(), error => (error ? reject(error) : resolve()))
+      delegate.handleStreamRequest(startRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
     expect(delegate.activeCount).toBe(1)
 
     await new Promise<void>((resolve, reject) => {
-      delegate.handleStreamRequest(startRequest(), error => (error ? reject(error) : resolve()))
+      delegate.handleStreamRequest(startRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
 
     expect(children[0]!.killed).toBe(true)
@@ -823,7 +988,10 @@ describe('streamingDelegate hap wiring', () => {
   // re-prepare on one session id would overwrite the entry and leak the
   // first talkback socket, which nothing else holds a handle to.
   it('closes the previous held socket when a session is re-prepared', async () => {
-    const sockets = [fakeSocket(6100), fakeSocket(6101)]
+    const sockets = [
+      fakeSocket(6100),
+      fakeSocket(6101),
+    ]
     let calls = 0
     const { delegate } = makeDelegate({
       talkback: true,
@@ -831,12 +999,16 @@ describe('streamingDelegate hap wiring', () => {
       bind: async () => ({ socket: sockets[calls]! as never, port: 6100 + calls++ }),
     })
     await new Promise<void>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), error => (error ? reject(error) : resolve()))
+      delegate.prepareStream(prepareRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
     expect(sockets[0]!.close).not.toHaveBeenCalled()
 
     await new Promise<void>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), error => (error ? reject(error) : resolve()))
+      delegate.prepareStream(prepareRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
     expect(sockets[0]!.close).toHaveBeenCalled()
     expect(sockets[1]!.close).not.toHaveBeenCalled()
@@ -871,7 +1043,10 @@ async function until(condition: () => boolean): Promise<void> {
 }
 
 /** The srtp material prepareRequest() sends for audio, as one key. */
-const HOMEKIT_AUDIO_KEY = Buffer.concat([Buffer.alloc(16, 3), Buffer.alloc(14, 4)]).toString('base64')
+const HOMEKIT_AUDIO_KEY = Buffer.concat([
+  Buffer.alloc(16, 3),
+  Buffer.alloc(14, 4),
+]).toString('base64')
 
 async function startTalkbackSession({ ipv6, ...overrides }: DelegateOverrides & { ipv6?: boolean } = {}) {
   const socket = fakeSocket(6100, ipv6 ? 'IPv6' : 'IPv4')
@@ -903,13 +1078,30 @@ async function startTalkbackSession({ ipv6, ...overrides }: DelegateOverrides & 
   })
   const { delegate } = made
   const prepared = await new Promise<PrepareStreamResponse>((resolve, reject) => {
-    const request = { ...prepareRequest(), ...(ipv6 ? { addressVersion: 'ipv6' as const, targetAddress: '2001:db8::9' } : {}) }
-    delegate.prepareStream(request, (error, response) => (response ? resolve(response) : reject(error)))
+    const request = {
+      ...prepareRequest(),
+      ...(ipv6
+        ? { addressVersion: 'ipv6' as const, targetAddress: '2001:db8::9' }
+        : {}),
+    }
+    delegate.prepareStream(request, (error, response) => (response
+      ? resolve(response)
+      : reject(error)))
   })
   await new Promise<void>((resolve, reject) => {
-    delegate.handleStreamRequest(startRequest(), error => (error ? reject(error) : resolve()))
+    delegate.handleStreamRequest(startRequest(), error => (error
+      ? reject(error)
+      : resolve()))
   })
-  return { ...made, socket, children, procs, prepared, reserved, sessionId: 'session-1' }
+  return {
+    ...made,
+    socket,
+    children,
+    procs,
+    prepared,
+    reserved,
+    sessionId: 'session-1',
+  }
 }
 
 /**
@@ -941,7 +1133,9 @@ describe('talkback', () => {
   it('reserves and closes the audio port when talkback is off', async () => {
     const { delegate, bind } = makeDelegate({ talkback: false, hasSpeaker: true })
     const prepared = await new Promise<PrepareStreamResponse>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), (error, response) => (response ? resolve(response) : reject(error)))
+      delegate.prepareStream(prepareRequest(), (error, response) => (response
+        ? resolve(response)
+        : reject(error)))
     })
     expect(bind).not.toHaveBeenCalled()
     expect((prepared.audio as SourceResponse).port).toBeGreaterThan(0)
@@ -968,7 +1162,10 @@ describe('talkback', () => {
   // opens, and ffmpeg exits taking the video with it. Live view was broken
   // outright for anyone with both settings on.
   it('does not ask ffmpeg to bind the port the return audio arrives on', async () => {
-    const { spawn, delegate, sessionId } = await startTalkbackSession({ audio: true, encoders: { opus: true } })
+    const { spawn, delegate, sessionId } = await startTalkbackSession({
+      audio: true,
+      encoders: { opus: true },
+    })
     const outputs = argvOf(spawn, 0).filter(a => a.startsWith('srtp://'))
     expect(outputs).toHaveLength(2)
     const [video, audio] = outputs as [string, string]
@@ -1039,7 +1236,10 @@ describe('talkback', () => {
     // BOTH binds — the held socket and the encoder's port reservation — asked
     // for the v6 family. A v4-reserved port number is no proof the same port is
     // free on udp6, which is where ffmpeg is about to bind it.
-    expect(bind.mock.calls).toEqual([[true], [true]])
+    expect(bind.mock.calls).toEqual([
+      [true],
+      [true],
+    ])
     const sdp = children[1]!.stdin
     expect(sdp).toContain('c=IN IP6 ::1')
     expect(sdp).not.toContain('127.0.0.1')
@@ -1054,7 +1254,10 @@ describe('talkback', () => {
     const { socket, children, delegate, sessionId, bind, reserved } = await startTalkbackSession()
     socket.emit('message', rtp(1))
     await until(() => socket.send.mock.calls.length > 0)
-    expect(bind.mock.calls).toEqual([[false], [false]])
+    expect(bind.mock.calls).toEqual([
+      [false],
+      [false],
+    ])
     // The encoder's port is only RESERVED: ffmpeg binds it itself, and cannot
     // if this process is still holding it.
     expect(reserved[0]!.close).toHaveBeenCalled()
@@ -1127,7 +1330,11 @@ describe('talkback', () => {
     socket.emit('message', rtp(1))
     await until(() => spawn.mock.calls.length === 2)
     delegate.stopSession(sessionId)
-    const logged = [...log.info.mock.calls, ...log.warn.mock.calls, ...log.debug.mock.calls].map(call => inspect(call)).join(' ')
+    const logged = [
+      ...log.info.mock.calls,
+      ...log.warn.mock.calls,
+      ...log.debug.mock.calls,
+    ].map(call => inspect(call)).join(' ')
     expect(logged).not.toContain(HOMEKIT_AUDIO_KEY)
     expect(logged).not.toContain('a=crypto')
     expect(logged).not.toContain('inline:')
@@ -1160,7 +1367,9 @@ describe('talkback', () => {
       },
     })
     await new Promise<PrepareStreamResponse>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), (error, response) => (response ? resolve(response) : reject(error)))
+      delegate.prepareStream(prepareRequest(), (error, response) => (response
+        ? resolve(response)
+        : reject(error)))
     })
     const outcome = new Promise<unknown>(resolve => delegate.handleStreamRequest(startRequest(), resolve))
     await until(() => get.mock.calls.length === 1)
@@ -1204,7 +1413,9 @@ describe('talkback', () => {
       }),
     })
     const prepare = () => new Promise<PrepareStreamResponse>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), (error, response) => (response ? resolve(response) : reject(error)))
+      delegate.prepareStream(prepareRequest(), (error, response) => (response
+        ? resolve(response)
+        : reject(error)))
     })
     await prepare()
     const outcome = new Promise<unknown>(resolve => delegate.handleStreamRequest(startRequest(), resolve))
@@ -1233,7 +1444,9 @@ describe('talkback', () => {
       url: failingUrl,
     })
     await new Promise<PrepareStreamResponse>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), (error, response) => (response ? resolve(response) : reject(error)))
+      delegate.prepareStream(prepareRequest(), (error, response) => (response
+        ? resolve(response)
+        : reject(error)))
     })
     const error = await new Promise<unknown>(resolve => delegate.handleStreamRequest(startRequest(), resolve))
     expect(error).toBeInstanceOf(Error)
@@ -1250,7 +1463,9 @@ describe('talkback', () => {
     const firstEncoder = children[1]!
 
     await new Promise<void>((resolve, reject) => {
-      delegate.handleStreamRequest(startRequest(), error => (error ? reject(error) : resolve()))
+      delegate.handleStreamRequest(startRequest(), error => (error
+        ? reject(error)
+        : resolve()))
     })
     expect(firstEncoder.killed).toBe(true)
 
@@ -1278,7 +1493,9 @@ describe('talkback', () => {
   it('binds a real udp socket when nothing is injected', async () => {
     const { delegate } = makeDelegate({ talkback: true, hasSpeaker: true, realBind: true })
     const prepared = await new Promise<PrepareStreamResponse>((resolve, reject) => {
-      delegate.prepareStream(prepareRequest(), (error, response) => (response ? resolve(response) : reject(error)))
+      delegate.prepareStream(prepareRequest(), (error, response) => (response
+        ? resolve(response)
+        : reject(error)))
     })
     const port = (prepared.audio as SourceResponse).port
     expect(port).toBeGreaterThan(0)
@@ -1290,7 +1507,9 @@ describe('talkback', () => {
   it('warns without leaking when the console refuses the talkback session', async () => {
     const { spawn, socket, delegate, sessionId, log } = await startTalkbackSession({
       createTalkbackSession: async () => {
-        throw Object.assign(new Error('503 DOWNSTREAM_ERROR'), { cause: { apiKey: 'SECRET-KEY' } })
+        throw Object.assign(new Error('503 DOWNSTREAM_ERROR'), {
+          cause: { apiKey: 'SECRET-KEY' },
+        })
       },
     })
     socket.emit('message', rtp(1))
@@ -1326,7 +1545,9 @@ describe('talkback', () => {
         calls++
         // First spawn is the video session and must succeed so the talkback
         // relay arms; the second is the encoder, which dies before running.
-        return calls === 1 ? fakeChild() : deadSpawn()
+        return calls === 1
+          ? fakeChild()
+          : deadSpawn()
       },
     })
     socket.emit('message', rtp(1))
@@ -1340,14 +1561,26 @@ const PKG_CAPS = { path: '/usr/bin/ffmpeg', encoder: 'h264_vaapi' as const, hwac
 const PKG_URL = 'rtsps://192.0.2.1:7441/pkg?token=SENTINEL'
 
 function pkgTarget() {
-  return { port: 5000, ssrc: 1, payloadType: 99, key: Buffer.alloc(30), localPort: 6000 }
+  return {
+    port: 5000,
+    ssrc: 1,
+    payloadType: 99,
+    key: Buffer.alloc(30),
+    localPort: 6000,
+  }
 }
 
 describe('package channel', () => {
-  const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() }
+  const log = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  }
 
   function makeDelegate(channel?: 'package') {
-    const urls = { get: vi.fn(async () => PKG_URL) }
+    const urls = {
+      get: vi.fn(async () => PKG_URL),
+    }
     const getSnapshot = vi.fn(async () => Buffer.from(channel ?? 'main'))
     const spawn = vi.fn(() => {
       throw new Error('should not spawn in this test')
@@ -1411,7 +1644,12 @@ describe('package channel', () => {
 })
 
 describe('buildFfmpegArgs frame-rate padding', () => {
-  const base = { url: PKG_URL, bitrate: 800, address: '192.0.2.9', video: pkgTarget() }
+  const base = {
+    url: PKG_URL,
+    bitrate: 800,
+    address: '192.0.2.9',
+    video: pkgTarget(),
+  }
 
   it('emits -r when an fps is supplied', () => {
     const args = buildFfmpegArgs(PKG_CAPS, { ...base, fps: 15 })
@@ -1433,7 +1671,12 @@ describe('buildFfmpegArgs frame-rate padding', () => {
 })
 
 describe('buildFfmpegArgs scaling', () => {
-  const base = { url: PKG_URL, bitrate: 800, address: '192.0.2.9', video: pkgTarget() }
+  const base = {
+    url: PKG_URL,
+    bitrate: 800,
+    address: '192.0.2.9',
+    video: pkgTarget(),
+  }
   const scale = { width: 1280, height: 960 }
 
   const QSV_CAPS = { path: '/usr/bin/ffmpeg', encoder: 'h264_qsv' as const, hwaccel: 'qsv' as const }
@@ -1444,7 +1687,11 @@ describe('buildFfmpegArgs scaling', () => {
   const expected = [
     { name: 'vaapi', caps: PKG_CAPS, filter: 'scale=1280:960,format=nv12,hwupload' },
     { name: 'qsv', caps: QSV_CAPS, filter: 'scale=1280:960,format=nv12,hwupload=extra_hw_frames=64' },
-    { name: 'software', caps: { path: '/usr/bin/ffmpeg', encoder: 'libx264' as const }, filter: 'scale=1280:960' },
+    {
+      name: 'software',
+      caps: { path: '/usr/bin/ffmpeg', encoder: 'libx264' as const },
+      filter: 'scale=1280:960',
+    },
   ]
 
   for (const { name, caps, filter } of expected) {
@@ -1456,7 +1703,10 @@ describe('buildFfmpegArgs scaling', () => {
   }
 
   it('follows the negotiated size rather than a constant', () => {
-    const args = buildFfmpegArgs(PKG_CAPS, { ...base, scale: { width: 640, height: 480 } })
+    const args = buildFfmpegArgs(PKG_CAPS, {
+      ...base,
+      scale: { width: 640, height: 480 },
+    })
     expect(args[args.indexOf('-vf') + 1]).toBe('scale=640:480,format=nv12,hwupload')
   })
 
@@ -1516,7 +1766,13 @@ describe('buildFfmpegArgs scaling', () => {
  * something clamps it. `-r 0` makes ffmpeg refuse to start at all.
  */
 describe('buildFfmpegArgs clamps the negotiated parameters', () => {
-  const base = { url: PKG_URL, bitrate: 800, address: '192.0.2.9', video: pkgTarget(), scale: { width: 1280, height: 960 } }
+  const base = {
+    url: PKG_URL,
+    bitrate: 800,
+    address: '192.0.2.9',
+    video: pkgTarget(),
+    scale: { width: 1280, height: 960 },
+  }
   const rate = (fps: number) => {
     const args = buildFfmpegArgs(PKG_CAPS, { ...base, fps })
     return args[args.indexOf('-r') + 1]
@@ -1526,7 +1782,14 @@ describe('buildFfmpegArgs clamps the negotiated parameters', () => {
     return args[args.indexOf('-vf') + 1]
   }
 
-  for (const fps of [0, -1, -30, Number.NaN, Number.POSITIVE_INFINITY, 0.4]) {
+  for (const fps of [
+    0,
+    -1,
+    -30,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    0.4,
+  ]) {
     it(`turns a negotiated fps of ${fps} into the advertised rate, never -r 0`, () => {
       expect(rate(fps)).toBe('30')
     })
@@ -1549,10 +1812,22 @@ describe('buildFfmpegArgs clamps the negotiated parameters', () => {
   })
 
   for (const [name, scale] of [
-    ['zero', { width: 0, height: 0 }],
-    ['negative', { width: -1280, height: -960 }],
-    ['nan', { width: Number.NaN, height: Number.NaN }],
-    ['infinite', { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY }],
+    [
+      'zero',
+      { width: 0, height: 0 },
+    ],
+    [
+      'negative',
+      { width: -1280, height: -960 },
+    ],
+    [
+      'nan',
+      { width: Number.NaN, height: Number.NaN },
+    ],
+    [
+      'infinite',
+      { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY },
+    ],
   ] as const) {
     it(`falls back to the native size for a ${name} dimension`, () => {
       expect(filter(scale)).toBe('scale=1600:1200,format=nv12,hwupload')
@@ -1571,7 +1846,12 @@ describe('buildFfmpegArgs clamps the negotiated parameters', () => {
   // The main camera negotiates the same numbers but supplies neither field, so
   // nothing here may start emitting one for it.
   it('adds neither -r nor -vf to the main-camera path', () => {
-    const args = buildFfmpegArgs(CAPS_HW, { url: PKG_URL, bitrate: 800, address: '192.0.2.9', video: pkgTarget() })
+    const args = buildFfmpegArgs(CAPS_HW, {
+      url: PKG_URL,
+      bitrate: 800,
+      address: '192.0.2.9',
+      video: pkgTarget(),
+    })
     expect(args).not.toContain('-r')
     expect(args).not.toContain('-vf')
   })
@@ -1580,7 +1860,12 @@ describe('buildFfmpegArgs clamps the negotiated parameters', () => {
 describe('package session honours what homekit negotiated', () => {
   // 1024x768@24 — neither the lens's native size nor the old hardcoded 15 fps,
   // so a constant anywhere in the path shows up here.
-  const negotiated = { ...REQUEST, width: 1024, height: 768, fps: 24 }
+  const negotiated = {
+    ...REQUEST,
+    width: 1024,
+    height: 768,
+    fps: 24,
+  }
 
   it('scales to and pads to the negotiated size and rate', async () => {
     const { delegate, spawn } = makeDelegate({ channel: 'package' })
@@ -1621,14 +1906,19 @@ describe('a session whose kill does not land', () => {
       child.emit('close', 0)
       return true
     }
-    return { child: child as unknown as ChildProcess, allow: () => {
-      killable = true
-    } }
+    return {
+      child: child as unknown as ChildProcess,
+      allow: () => {
+        killable = true
+      },
+    }
   }
 
   it('stays tracked and keeps holding its slot, and a retry kills it', async () => {
     const { child, allow } = stubbornChild()
-    const { delegate } = makeDelegate({ spawn: () => child })
+    const { delegate } = makeDelegate({
+      spawn: () => child,
+    })
     expect(await delegate.startSession('a', REQUEST, RTP)).toBe(true)
 
     delegate.stopAll()
@@ -1647,7 +1937,9 @@ describe('a session whose kill does not land', () => {
 
   it('is retried by stopSession too, not only by the shutdown drain', async () => {
     const { child, allow } = stubbornChild()
-    const { delegate } = makeDelegate({ spawn: () => child })
+    const { delegate } = makeDelegate({
+      spawn: () => child,
+    })
     await delegate.startSession('a', REQUEST, RTP)
 
     delegate.stopSession('a')
@@ -1661,7 +1953,9 @@ describe('a session whose kill does not land', () => {
 
   it('drops a process that exits on its own and releases its slot', async () => {
     const child = fakeChild()
-    const { delegate } = makeDelegate({ spawn: () => child })
+    const { delegate } = makeDelegate({
+      spawn: () => child,
+    })
     await delegate.startSession('a', REQUEST, RTP)
     expect(delegate.activeCount).toBe(1)
 
@@ -1683,7 +1977,9 @@ describe('a late exit from an orphaned process', () => {
     orphan.kill = () => false
     const live = fakeChild()
     const children = [orphan as unknown as ChildProcess, live]
-    const { delegate } = makeDelegate({ spawn: () => children.shift()! })
+    const { delegate } = makeDelegate({
+      spawn: () => children.shift()!,
+    })
 
     await delegate.startSession('a', REQUEST, RTP)
     delegate.stopSession('a')

@@ -44,7 +44,9 @@ export class Fmp4Splitter {
   push(chunk: Buffer): void {
     if (this.broken)
       return
-    this.pending = this.pending.length === 0 ? chunk : Buffer.concat([this.pending, chunk])
+    this.pending = this.pending.length === 0
+      ? chunk
+      : Buffer.concat([this.pending, chunk])
     for (;;) {
       if (this.pending.length < MIN_BOX)
         return

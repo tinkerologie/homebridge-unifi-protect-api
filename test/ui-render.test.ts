@@ -6,14 +6,40 @@ import { makeDoc } from './config-ops.test.js'
 const doc = makeDoc()
 
 const DEVICES = [
-  { id: 'a', name: 'Doorbell', type: 'camera', hasSpeaker: true, hasMic: true, hasPackageCamera: true },
-  { id: 'b', name: 'Backyard', type: 'camera', hasSpeaker: false, hasMic: true, hasPackageCamera: false },
-  { id: 'c', name: 'Ding Dong', type: 'chime', hasSpeaker: false, hasMic: false, hasPackageCamera: false },
+  {
+    id: 'a',
+    name: 'Doorbell',
+    type: 'camera',
+    hasSpeaker: true,
+    hasMic: true,
+    hasPackageCamera: true,
+  },
+  {
+    id: 'b',
+    name: 'Backyard',
+    type: 'camera',
+    hasSpeaker: false,
+    hasMic: true,
+    hasPackageCamera: false,
+  },
+  {
+    id: 'c',
+    name: 'Ding Dong',
+    type: 'chime',
+    hasSpeaker: false,
+    hasMic: false,
+    hasPackageCamera: false,
+  },
 ]
 
 describe('renderTabs', () => {
   it('builds a tablist of real buttons with one selected', () => {
-    const { tablist, panes } = renderTabs(doc, ['Connection', 'Defaults', 'Devices', 'Help']) as unknown as {
+    const { tablist, panes } = renderTabs(doc, [
+      'Connection',
+      'Defaults',
+      'Devices',
+      'Help',
+    ]) as unknown as {
       tablist: FakeElement
       panes: FakeElement[]
     }
@@ -98,7 +124,9 @@ describe('renderTabs', () => {
     const calls: number[] = []
     // @ts-expect-error test-only global stub; the real homebridge object is
     // injected by the parent iframe and is not present under vitest.
-    globalThis.homebridge = { fixScrollHeight: () => calls.push(1) }
+    globalThis.homebridge = {
+      fixScrollHeight: () => calls.push(1),
+    }
     try {
       const { select } = renderTabs(doc, ['A', 'B']) as unknown as { select: (index: number) => void }
       const before = calls.length
@@ -194,7 +222,9 @@ describe('renderDeviceList', () => {
   })
 
   it('never lets a hostile device name become an element', () => {
-    const hostile = [{ ...DEVICES[0]!, name: '<img src=x onerror=alert(1)>' }]
+    const hostile = [
+      { ...DEVICES[0]!, name: '<img src=x onerror=alert(1)>' },
+    ]
     const { list } = renderDeviceList(doc, hostile, () => {}) as unknown as { list: FakeElement }
     // Load-bearing: `textContent` only returns the raw payload if the row
     // assigned it via `.textContent =`. An `innerHTML` mutation would have
@@ -245,7 +275,12 @@ describe('renderDeviceList', () => {
 describe('renderDetail', () => {
   it('groups controls under General / Live view / Recording / Extra accessories', () => {
     const { bodies } = renderDetail(doc, DEVICES[0]!) as unknown as { bodies: Record<string, FakeElement> }
-    expect(Object.keys(bodies)).toEqual(['General', 'Live view', 'Recording', 'Extra accessories'])
+    expect(Object.keys(bodies)).toEqual([
+      'General',
+      'Live view',
+      'Recording',
+      'Extra accessories',
+    ])
   })
 
   it('never lets a hostile device name become an element in the heading', () => {
@@ -366,7 +401,10 @@ describe('renderDetail', () => {
     const first = renderDetail(doc, DEVICES[0]!) as unknown as { bodies: Record<string, FakeElement> }
     const second = renderDetail(doc, DEVICES[1]!) as unknown as { bodies: Record<string, FakeElement> }
     const ids = (b: Record<string, FakeElement>) => Object.values(b).map(x => x.attributes['aria-labelledby'])
-    expect(new Set([...ids(first.bodies), ...ids(second.bodies)]).size).toBe(8)
+    expect(new Set([
+      ...ids(first.bodies),
+      ...ids(second.bodies),
+    ]).size).toBe(8)
   })
 })
 

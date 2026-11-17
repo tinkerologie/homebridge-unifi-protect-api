@@ -36,8 +36,13 @@ export function makeSelfSigned(cn = 'unifi.local'): TestCert {
     // stderr piped rather than ignored: openssl's progress dots stay out of the
     // test output, but a genuine failure still reports why instead of a bare
     // "Command failed". A missing binary already gives a clear ENOENT.
-    ], { stdio: ['ignore', 'ignore', 'pipe'] })
-    return { key: readFileSync(join(dir, 'key.pem'), 'utf8'), cert: readFileSync(join(dir, 'cert.pem'), 'utf8') }
+    ], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    return {
+      key: readFileSync(join(dir, 'key.pem'), 'utf8'),
+      cert: readFileSync(join(dir, 'cert.pem'), 'utf8'),
+    }
   }
   catch (error) {
     const stderr = (error as { stderr?: Buffer }).stderr?.toString() ?? ''

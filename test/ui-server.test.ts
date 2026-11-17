@@ -3,7 +3,12 @@ import { consoleCertRequest, discoverRequest, testConnectionRequest } from '../h
 import { fingerprintOf } from '../src/protect/cert.js'
 import { makeSelfSigned } from './support/tls.js'
 
-const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+function ok(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
 
 /** Real certificates: fingerprints of made-up strings would collide trivially. */
 const CERT_A = makeSelfSigned('console-a').cert
@@ -15,7 +20,9 @@ const creds = { host: '10.0.0.1', apiKey: 'k', consoleCert: CERT_A }
 describe('testConnectionRequest', () => {
   it('returns the protect version and nvr name', async () => {
     const fetchImpl = vi.fn(async (url: string) =>
-      url.endsWith('/meta/info') ? ok({ applicationVersion: '7.2.105' }) : ok({ id: 'n1', name: 'UDM-Pro' })) as never
+      url.endsWith('/meta/info')
+        ? ok({ applicationVersion: '7.2.105' })
+        : ok({ id: 'n1', name: 'UDM-Pro' })) as never
 
     const result = await testConnectionRequest(creds, { fetchImpl })
 
@@ -64,10 +71,15 @@ describe('testConnectionRequest', () => {
 })
 
 describe('consoleCertRequest', () => {
-  const readCert = (pem: string) => vi.fn(async () => ({ pem, fingerprint: fingerprintOf(pem) }))
+  const readCert = (pem: string) => vi.fn(async () => ({
+    pem,
+    fingerprint: fingerprintOf(pem),
+  }))
 
   it('reports first use as neither a match nor a mismatch', async () => {
-    const result = await consoleCertRequest({ host: '10.0.0.1' }, { readCert: readCert(CERT_A) })
+    const result = await consoleCertRequest({ host: '10.0.0.1' }, {
+      readCert: readCert(CERT_A),
+    })
 
     expect(result.matches).toBeNull()
     expect(result.trustedFingerprint).toBeNull()
@@ -76,14 +88,18 @@ describe('consoleCertRequest', () => {
   })
 
   it('confirms a certificate that still matches', async () => {
-    const result = await consoleCertRequest({ host: '10.0.0.1', consoleCert: CERT_A }, { readCert: readCert(CERT_A) })
+    const result = await consoleCertRequest({ host: '10.0.0.1', consoleCert: CERT_A }, {
+      readCert: readCert(CERT_A),
+    })
 
     expect(result.matches).toBe(true)
   })
 
   // The UI stops here and never sends the key — see index.html.
   it('reports a changed certificate as a mismatch, with both fingerprints', async () => {
-    const result = await consoleCertRequest({ host: '10.0.0.1', consoleCert: CERT_A }, { readCert: readCert(CERT_B) })
+    const result = await consoleCertRequest({ host: '10.0.0.1', consoleCert: CERT_A }, {
+      readCert: readCert(CERT_B),
+    })
 
     expect(result.matches).toBe(false)
     expect(result.trustedFingerprint).toBe(fingerprintOf(CERT_A))
@@ -99,14 +115,23 @@ describe('consoleCertRequest', () => {
 
 describe('discoverRequest', () => {
   it('returns capability flags so the UI cannot offer impossible settings', async () => {
-    const cameras = [{
-      id: 'cam1',
-      name: 'Doorbell',
-      modelKey: 'camera',
-      hasPackageCamera: true,
-      featureFlags: { hasSpeaker: true, hasMic: true, hasLedStatus: true, smartDetectTypes: ['person', 'package'] },
-    }]
-    const fetchImpl = vi.fn(async (url: string) => ok(url.endsWith('/cameras') ? cameras : [])) as never
+    const cameras = [
+      {
+        id: 'cam1',
+        name: 'Doorbell',
+        modelKey: 'camera',
+        hasPackageCamera: true,
+        featureFlags: {
+          hasSpeaker: true,
+          hasMic: true,
+          hasLedStatus: true,
+          smartDetectTypes: ['person', 'package'],
+        },
+      },
+    ]
+    const fetchImpl = vi.fn(async (url: string) => ok(url.endsWith('/cameras')
+      ? cameras
+      : [])) as never
 
     const result = await discoverRequest(creds, { fetchImpl })
 
@@ -124,8 +149,17 @@ describe('discoverRequest', () => {
   })
 
   it('reports a missing microphone as false rather than undefined', async () => {
-    const cameras = [{ id: 'cam1', name: 'Sidegate', modelKey: 'camera', featureFlags: {} }]
-    const fetchImpl = vi.fn(async (url: string) => ok(url.endsWith('/cameras') ? cameras : [])) as never
+    const cameras = [
+      {
+        id: 'cam1',
+        name: 'Sidegate',
+        modelKey: 'camera',
+        featureFlags: {},
+      },
+    ]
+    const fetchImpl = vi.fn(async (url: string) => ok(url.endsWith('/cameras')
+      ? cameras
+      : [])) as never
 
     const result = await discoverRequest(creds, { fetchImpl })
 

@@ -84,10 +84,15 @@ export class EventTracker {
       // arriving mid-event produces nothing and leaves the sensor on.
       if (this.active.has(routed.eventId))
         return []
-      return [...this.start(routed), ...this.end(routed.eventId)]
+      return [
+        ...this.start(routed),
+        ...this.end(routed.eventId),
+      ]
     }
 
-    return routed.phase === 'start' ? this.start(routed) : this.end(routed.eventId)
+    return routed.phase === 'start'
+      ? this.start(routed)
+      : this.end(routed.eventId)
   }
 
   private start(routed: RoutedEvent): SensorChange[] {
@@ -153,7 +158,9 @@ export class EventTracker {
    */
   clearAll(): SensorChange[] {
     const changes: SensorChange[] = []
-    for (const eventId of [...this.active.keys()])
+    for (const eventId of [
+      ...this.active.keys(),
+    ])
       changes.push(...this.end(eventId))
     return changes
   }

@@ -10,7 +10,15 @@ const byName = (n: string) => cameras.find((c: { name: string }) => c.name === n
 describe('desiredSubtypes', () => {
   it('exposes only the detection types enabled on each real camera', () => {
     expect(desiredSubtypes(byName('Doorbell')).sort()).toEqual(
-      ['detect-animal', 'detect-package', 'detect-person', 'detect-vehicle', 'led', 'motion', 'ring'].sort(),
+      [
+        'detect-animal',
+        'detect-package',
+        'detect-person',
+        'detect-vehicle',
+        'led',
+        'motion',
+        'ring',
+      ].sort(),
     )
     // Backyard supports vehicle but has it disabled in Protect, so no Vehicle sensor.
     expect(desiredSubtypes(byName('Backyard'))).not.toContain('detect-vehicle')
@@ -24,14 +32,25 @@ describe('desiredSubtypes', () => {
 
   it('only the doorbell gets a ring service', () => {
     expect(desiredSubtypes(byName('Doorbell'))).toContain('ring')
-    for (const n of ['Backyard', 'Driveway', 'Sidegate', 'Garage'])
+    for (const n of [
+      'Backyard',
+      'Driveway',
+      'Sidegate',
+      'Garage',
+    ])
       expect(desiredSubtypes(byName(n)), n).not.toContain('ring')
   })
 
   // SYNTHESIZED: audio detection is disabled on every camera on this hardware and
   // Task 0 captured no audio event, so the enabled state is constructed here.
   it('audio sensors appear only once enabled in Protect', () => {
-    const camera = { ...byName('Garage'), smartDetectSettings: { objectTypes: ['person'], audioTypes: ['alrmSmoke', 'alrmBark'] } }
+    const camera = {
+      ...byName('Garage'),
+      smartDetectSettings: {
+        objectTypes: ['person'],
+        audioTypes: ['alrmSmoke', 'alrmBark'],
+      },
+    }
     const subtypes = desiredSubtypes(camera)
     expect(subtypes).toContain('audio-alrmSmoke')
     // Bark has no native HomeKit service and must not be exposed.
@@ -39,7 +58,11 @@ describe('desiredSubtypes', () => {
   })
 
   it('ignores an unknown detection type from a firmware update', () => {
-    const camera = { smartDetectSettings: { objectTypes: ['person', 'unicorn'] } }
+    const camera = {
+      smartDetectSettings: {
+        objectTypes: ['person', 'unicorn'],
+      },
+    }
     expect(desiredSubtypes(camera)).toEqual(['motion', 'detect-person'])
   })
 
@@ -48,12 +71,22 @@ describe('desiredSubtypes', () => {
     expect(desiredSubtypes({ id: 'x' })).toEqual(['motion'])
     // A degraded payload can carry the wrong *type*, not just a missing field.
     expect(() => desiredSubtypes({ smartDetectSettings: 'nope', featureFlags: [] })).not.toThrow()
-    expect(desiredSubtypes({ smartDetectSettings: { objectTypes: [1, null, 'person'] } })).toEqual(['motion', 'detect-person'])
+    expect(desiredSubtypes({
+      smartDetectSettings: {
+        objectTypes: [1, null, 'person'],
+      },
+    })).toEqual(['motion', 'detect-person'])
   })
 })
 
 const api = { hap } as never
-const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), success: vi.fn() }
+const log = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  success: vi.fn(),
+}
 
 function setup(device: Record<string, unknown>, setLed = vi.fn(async () => {})) {
   const accessory = new FakeAccessory()
@@ -73,7 +106,10 @@ describe('buildCameraServices', () => {
     const { accessory } = setup({
       ...device,
       name: 'A'.repeat(90),
-      smartDetectSettings: { ...device.smartDetectSettings, objectTypes: ['licensePlate'] },
+      smartDetectSettings: {
+        ...device.smartDetectSettings,
+        objectTypes: ['licensePlate'],
+      },
     })
     for (const [type, subtype, suffix] of [
       [S.MotionSensor, 'detect-licensePlate', 'License Plate'],
@@ -114,15 +150,25 @@ describe('buildCameraServices', () => {
   })
 
   it('removes exactly the disabled type and leaves every other service intact', () => {
-    const device = { ...byName('Driveway') } as Record<string, unknown>
+    const device = {
+      ...byName('Driveway'),
+    } as Record<string, unknown>
     const { accessory, build } = setup(device)
     expect(subtypesOf(accessory)).toContain('detect-vehicle')
     const motion = accessory.getServiceById(S.MotionSensor, 'motion')!
 
-    device.smartDetectSettings = { objectTypes: ['person', 'animal'], audioTypes: [] }
+    device.smartDetectSettings = {
+      objectTypes: ['person', 'animal'],
+      audioTypes: [],
+    }
     build()
 
-    expect(subtypesOf(accessory)).toEqual(['detect-animal', 'detect-person', 'led', 'motion'])
+    expect(subtypesOf(accessory)).toEqual([
+      'detect-animal',
+      'detect-person',
+      'led',
+      'motion',
+    ])
     // Not merely absent from the list — the surviving objects are the originals.
     expect(accessory.getServiceById(S.MotionSensor, 'motion')).toBe(motion)
     expect(accessory.getService(S.AccessoryInformation)).toBeDefined()
@@ -143,16 +189,39 @@ describe('buildCameraServices', () => {
     // Every shape validation can fail into: absent, and present-but-wrong-type.
     for (const degraded of [
       { id: byName('Doorbell').id, name: 'Doorbell' },
-      { ...byName('Doorbell'), smartDetectSettings: undefined },
-      { ...byName('Doorbell'), featureFlags: 'renamed-by-firmware' },
-      { ...byName('Doorbell'), smartDetectSettings: [], featureFlags: [] },
+      {
+        ...byName('Doorbell'),
+        smartDetectSettings: undefined,
+      },
+      {
+        ...byName('Doorbell'),
+        featureFlags: 'renamed-by-firmware',
+      },
+      {
+        ...byName('Doorbell'),
+        smartDetectSettings: [],
+        featureFlags: [],
+      },
       // The shape a field rename actually produces: both containers present and
       // objects, both empty. A guard that only checks `isRecord` on the two
       // containers passes this and strips the whole accessory.
-      { ...byName('Doorbell'), smartDetectSettings: {}, featureFlags: {} },
+      {
+        ...byName('Doorbell'),
+        smartDetectSettings: {},
+        featureFlags: {},
+      },
       // One field renamed at a time — each still means "not understood".
-      { ...byName('Doorbell'), smartDetectSettings: { objectTypeList: ['person'], audioTypes: [] } },
-      { ...byName('Doorbell'), featureFlags: { hasSpeaker: true } },
+      {
+        ...byName('Doorbell'),
+        smartDetectSettings: {
+          objectTypeList: ['person'],
+          audioTypes: [],
+        },
+      },
+      {
+        ...byName('Doorbell'),
+        featureFlags: { hasSpeaker: true },
+      },
     ]) {
       build(degraded as Record<string, unknown>)
       expect(accessory.services, JSON.stringify(degraded).slice(0, 60)).toEqual(before)
@@ -171,7 +240,10 @@ describe('buildCameraServices', () => {
   it('still removes when the payload is understood and simply has nothing enabled', () => {
     const { accessory, build } = setup(byName('Doorbell'))
 
-    build({ ...byName('Doorbell'), smartDetectSettings: { objectTypes: [], audioTypes: [] } })
+    build({
+      ...byName('Doorbell'),
+      smartDetectSettings: { objectTypes: [], audioTypes: [] },
+    })
 
     expect(subtypesOf(accessory)).toEqual(['led', 'motion', 'ring'])
   })
@@ -184,7 +256,10 @@ describe('buildCameraServices', () => {
     const foreign = accessory.addService(S.Switch, 'Streaming', 'camera-stream')
 
     build()
-    build({ ...byName('Driveway'), smartDetectSettings: { objectTypes: [], audioTypes: [] } })
+    build({
+      ...byName('Driveway'),
+      smartDetectSettings: { objectTypes: [], audioTypes: [] },
+    })
 
     expect(accessory.getServiceById(S.Switch, 'camera-stream')).toBe(foreign)
   })
@@ -207,7 +282,10 @@ describe('buildCameraServices', () => {
 
     // A later discovery, including one where the console renamed the device.
     build()
-    build({ ...byName('Garage'), name: 'Back Door' })
+    build({
+      ...byName('Garage'),
+      name: 'Back Door',
+    })
 
     expect(accessory.getServiceById(S.MotionSensor, 'motion')).toBe(motion)
     expect(motion.displayName).toBe('Garage Motion')
@@ -221,7 +299,9 @@ describe('buildCameraServices', () => {
 
   it('writes the LED through to Protect and rejects the write when Protect refuses', async () => {
     const setLed = vi.fn(async () => {})
-    const { accessory } = setup({ ...byName('Backyard') }, setLed)
+    const { accessory } = setup({
+      ...byName('Backyard'),
+    }, setLed)
     const on = accessory.getServiceById(S.Switch, 'led')!.getCharacteristic(C.On)
     // ledSettings.isEnabled is true on Backyard, so HomeKit starts on.
     expect(on.value).toBe(true)
@@ -239,11 +319,19 @@ describe('buildCameraServices', () => {
     // appears would pass anyway. Assert the negative, and the argument shapes.
     const secret = 'sk-live-DO-NOT-LOG-9f3b21'
     const refusal = new Error('403 from Protect')
-    ;(refusal as Error & { cause?: unknown }).cause = { apiKey: secret, headers: { 'x-api-key': secret } }
+    ;(refusal as Error & { cause?: unknown }).cause = {
+      apiKey: secret,
+      headers: { 'x-api-key': secret },
+    }
     setLed.mockRejectedValueOnce(refusal)
     await expect(fire(true)).rejects.toBeInstanceOf(FakeHapStatusError)
 
-    const calls = [...log.warn.mock.calls, ...log.error.mock.calls, ...log.info.mock.calls, ...log.debug.mock.calls]
+    const calls = [
+      ...log.warn.mock.calls,
+      ...log.error.mock.calls,
+      ...log.info.mock.calls,
+      ...log.debug.mock.calls,
+    ]
     expect(log.warn).toHaveBeenCalled()
     expect(JSON.stringify(log.warn.mock.calls)).toContain('403 from Protect')
     for (const call of calls) {
@@ -285,7 +373,13 @@ describe('applyChange', () => {
 
   // SYNTHESIZED: no audio event exists in the fixtures — the shape is constructed.
   it('sets smoke and carbon monoxide both ways', () => {
-    const audio = { ...device, smartDetectSettings: { objectTypes: [], audioTypes: ['alrmSmoke', 'alrmCmonx'] } }
+    const audio = {
+      ...device,
+      smartDetectSettings: {
+        objectTypes: [],
+        audioTypes: ['alrmSmoke', 'alrmCmonx'],
+      },
+    }
     const { accessory } = setup(audio)
     const smoke = accessory.getServiceById(S.SmokeSensor, 'audio-alrmSmoke')!
     const co = accessory.getServiceById(S.CarbonMonoxideSensor, 'audio-alrmCmonx')!
@@ -318,7 +412,13 @@ describe('applyChange', () => {
     const { accessory } = setup(byName('Sidegate'))
 
     // Unknown to the builder entirely, and known-but-not-built on this camera.
-    for (const subtype of ['nonsense', 'detect-vehicle', 'ring', 'led', 'audio-alrmSmoke'])
+    for (const subtype of [
+      'nonsense',
+      'detect-vehicle',
+      'ring',
+      'led',
+      'audio-alrmSmoke',
+    ])
       expect(() => applyChange(api, accessory as never, { deviceId: 'x', subtype, active: true }), subtype).not.toThrow()
 
     // Sidegate enabled only person detection on the capturing console, so the

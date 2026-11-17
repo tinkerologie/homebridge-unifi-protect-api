@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseConfig, settingsFor, storeConsoleCert } from '../src/config.js'
 
-const minimal = { platform: 'UniFiProtect', name: 'UniFi Protect', host: '10.0.0.1', apiKey: 'k' }
+const minimal = {
+  platform: 'UniFiProtect',
+  name: 'UniFi Protect',
+  host: '10.0.0.1',
+  apiKey: 'k',
+}
 
 describe('parseConfig', () => {
   it('rejects a config with no host', () => {
@@ -39,7 +44,18 @@ describe('parseConfig', () => {
   })
 
   it('preserves the discoveredDevices cache when present', () => {
-    const devices = [{ id: 'cam1', name: 'Front Door', type: 'camera', hasSpeaker: true, hasMic: true, hasLedStatus: false, hasPackageCamera: true, smartDetectTypes: ['person'] }]
+    const devices = [
+      {
+        id: 'cam1',
+        name: 'Front Door',
+        type: 'camera',
+        hasSpeaker: true,
+        hasMic: true,
+        hasLedStatus: false,
+        hasPackageCamera: true,
+        smartDetectTypes: ['person'],
+      },
+    ]
     const result = parseConfig({ ...minimal, discoveredDevices: devices })
     expect(result.success).toBe(true)
     expect(result.success && result.data.discoveredDevices).toEqual(devices)
@@ -61,14 +77,44 @@ describe('parseConfig', () => {
   })
 
   it('drops malformed entries but keeps valid cached devices', () => {
-    const valid = { id: 'cam1', name: 'Front Door', type: 'camera', hasSpeaker: true, hasMic: true, hasLedStatus: false, hasPackageCamera: true, smartDetectTypes: ['person'] }
-    const result = parseConfig({ ...minimal, discoveredDevices: [valid, 'garbage', { id: 42 }] })
+    const valid = {
+      id: 'cam1',
+      name: 'Front Door',
+      type: 'camera',
+      hasSpeaker: true,
+      hasMic: true,
+      hasLedStatus: false,
+      hasPackageCamera: true,
+      smartDetectTypes: ['person'],
+    }
+    const result = parseConfig({
+      ...minimal,
+      discoveredDevices: [
+        valid,
+        'garbage',
+        { id: 42 },
+      ],
+    })
     expect(result.success).toBe(true)
     expect(result.success && result.data.discoveredDevices).toEqual([valid])
   })
 
   it('recovers an invalid smartDetectTypes to an empty array', () => {
-    const result = parseConfig({ ...minimal, discoveredDevices: [{ id: 'cam1', name: 'Front Door', type: 'camera', hasSpeaker: false, hasMic: false, hasLedStatus: false, hasPackageCamera: false, smartDetectTypes: 'person' }] })
+    const result = parseConfig({
+      ...minimal,
+      discoveredDevices: [
+        {
+          id: 'cam1',
+          name: 'Front Door',
+          type: 'camera',
+          hasSpeaker: false,
+          hasMic: false,
+          hasLedStatus: false,
+          hasPackageCamera: false,
+          smartDetectTypes: 'person',
+        },
+      ],
+    })
     expect(result.success).toBe(true)
     expect(result.success && result.data.discoveredDevices?.[0]?.smartDetectTypes).toEqual([])
   })
@@ -95,7 +141,10 @@ describe('parseConfig', () => {
   // z.boolean().default(false)` would hide every camera from HomeKit for those
   // users, and nothing above would have noticed.
   it('applies each field default individually inside a partial defaults block', () => {
-    const byQuality = parseConfig({ ...minimal, defaults: { quality: 'low' } })
+    const byQuality = parseConfig({
+      ...minimal,
+      defaults: { quality: 'low' },
+    })
     expect(byQuality.success && byQuality.data.defaults).toEqual({
       exposeNewDevices: true,
       quality: 'low',
@@ -103,7 +152,10 @@ describe('parseConfig', () => {
       icloudTier: '200gb',
     })
 
-    const byExpose = parseConfig({ ...minimal, defaults: { exposeNewDevices: false } })
+    const byExpose = parseConfig({
+      ...minimal,
+      defaults: { exposeNewDevices: false },
+    })
     expect(byExpose.success && byExpose.data.defaults).toEqual({
       exposeNewDevices: false,
       quality: 'auto',
@@ -111,7 +163,10 @@ describe('parseConfig', () => {
       icloudTier: '200gb',
     })
 
-    const byHksv = parseConfig({ ...minimal, defaults: { hksv: true } })
+    const byHksv = parseConfig({
+      ...minimal,
+      defaults: { hksv: true },
+    })
     expect(byHksv.success && byHksv.data.defaults).toEqual({
       exposeNewDevices: true,
       quality: 'auto',
@@ -132,7 +187,12 @@ describe('parseConfig', () => {
   })
 
   it('accepts a per-camera quality override', () => {
-    const parsed = parseConfig({ ...minimal, devices: { cam1: { quality: 'high' } } })
+    const parsed = parseConfig({
+      ...minimal,
+      devices: {
+        cam1: { quality: 'high' },
+      },
+    })
     expect(parsed.success).toBe(true)
   })
 
@@ -141,13 +201,26 @@ describe('parseConfig', () => {
   // dropping 'auto' from the enum would leave every other test green while
   // rejecting the config of anyone who has ever opened the settings page.
   it('accepts an explicit auto quality, per camera and as the global default', () => {
-    expect(parseConfig({ ...minimal, devices: { cam1: { quality: 'auto' } } }).success).toBe(true)
-    const parsed = parseConfig({ ...minimal, defaults: { quality: 'auto' } })
+    expect(parseConfig({
+      ...minimal,
+      devices: {
+        cam1: { quality: 'auto' },
+      },
+    }).success).toBe(true)
+    const parsed = parseConfig({
+      ...minimal,
+      defaults: { quality: 'auto' },
+    })
     expect(parsed.success && settingsFor(parsed.data, 'cam1').quality).toBe('auto')
   })
 
   it('rejects a nonsense quality', () => {
-    const parsed = parseConfig({ ...minimal, devices: { cam1: { quality: 'ultra' } } })
+    const parsed = parseConfig({
+      ...minimal,
+      devices: {
+        cam1: { quality: 'ultra' },
+      },
+    })
     expect(parsed.success).toBe(false)
   })
 
@@ -157,7 +230,12 @@ describe('parseConfig', () => {
   })
 
   it('rejects an unknown tier rather than coercing it', () => {
-    const parsed = parseConfig({ platform: 'UniFiProtect', host: 'h', apiKey: 'k', defaults: { icloudTier: '1tb' } })
+    const parsed = parseConfig({
+      platform: 'UniFiProtect',
+      host: 'h',
+      apiKey: 'k',
+      defaults: { icloudTier: '1tb' },
+    })
     expect(parsed.success).toBe(false)
   })
 
@@ -176,8 +254,18 @@ describe('parseConfig', () => {
 describe('settingsFor', () => {
   const config = parseConfig({
     ...minimal,
-    defaults: { exposeNewDevices: true, quality: 'low', hksv: false, icloudTier: '200gb' },
-    devices: { cam1: { hksv: true, smartDetect: ['person'] } },
+    defaults: {
+      exposeNewDevices: true,
+      quality: 'low',
+      hksv: false,
+      icloudTier: '200gb',
+    },
+    devices: {
+      cam1: {
+        hksv: true,
+        smartDetect: ['person'],
+      },
+    },
   })
   const data = config.success
     ? config.data
@@ -186,7 +274,12 @@ describe('settingsFor', () => {
       })()
 
   it('merges device overrides over defaults', () => {
-    expect(settingsFor(data, 'cam1')).toMatchObject({ quality: 'low', hksv: true, smartDetect: ['person'], expose: true })
+    expect(settingsFor(data, 'cam1')).toMatchObject({
+      quality: 'low',
+      hksv: true,
+      smartDetect: ['person'],
+      expose: true,
+    })
   })
 
   it('falls back to exposeNewDevices for an unknown device', () => {
@@ -194,7 +287,10 @@ describe('settingsFor', () => {
   })
 
   it('hides new devices when exposeNewDevices is false', () => {
-    const strict = parseConfig({ ...minimal, defaults: { exposeNewDevices: false } })
+    const strict = parseConfig({
+      ...minimal,
+      defaults: { exposeNewDevices: false },
+    })
     expect(strict.success && settingsFor(strict.data, 'unseen')).toMatchObject({
       expose: false,
       quality: 'auto',
@@ -210,13 +306,21 @@ describe('settingsFor', () => {
   // an outdoor camera hears passers-by who have not consented. It must never
   // become true because a camera simply exists in the config.
   it('defaults audio off for a camera that does not ask for it', () => {
-    const parsed = parseConfig({ ...minimal, devices: { cam1: {} } })
+    const parsed = parseConfig({
+      ...minimal,
+      devices: { cam1: {} },
+    })
     expect(parsed.success && settingsFor(parsed.data, 'cam1').audio).toBe(false)
     expect(settingsFor(data, 'unseen').audio).toBe(false)
   })
 
   it('honours a per-camera audio opt-in', () => {
-    const parsed = parseConfig({ ...minimal, devices: { cam1: { audio: true } } })
+    const parsed = parseConfig({
+      ...minimal,
+      devices: {
+        cam1: { audio: true },
+      },
+    })
     expect(parsed.success && settingsFor(parsed.data, 'cam1').audio).toBe(true)
     // ...and only for that camera.
     expect(parsed.success && settingsFor(parsed.data, 'cam2').audio).toBe(false)
@@ -227,7 +331,9 @@ describe('settingsFor', () => {
       platform: 'UniFiProtect',
       host: 'h',
       apiKey: 'k',
-      devices: { cam1: { quality: 'high' } },
+      devices: {
+        cam1: { quality: 'high' },
+      },
     })
     expect(parsed.success && settingsFor(parsed.data, 'cam1').packageCamera).toBe(false)
   })
@@ -237,7 +343,9 @@ describe('settingsFor', () => {
       platform: 'UniFiProtect',
       host: 'h',
       apiKey: 'k',
-      devices: { cam1: { packageCamera: true } },
+      devices: {
+        cam1: { packageCamera: true },
+      },
     })
     expect(parsed.success && settingsFor(parsed.data, 'cam1').packageCamera).toBe(true)
   })
@@ -247,7 +355,9 @@ describe('settingsFor', () => {
       platform: 'UniFiProtect',
       host: 'h',
       apiKey: 'k',
-      devices: { cam1: { packageCamera: 'yes' } },
+      devices: {
+        cam1: { packageCamera: 'yes' },
+      },
     })
     expect(parsed.success).toBe(false)
   })
@@ -266,7 +376,13 @@ describe('storeConsoleCert', () => {
       bridge: { name: 'Homebridge', pin: '031-45-154' },
       platforms: [
         { platform: 'SomeoneElse', host: '10.0.0.1' },
-        { ...minimal, _bridge: { username: 'AA:BB', port: 1234 }, devices: { cam1: { expose: false } } },
+        {
+          ...minimal,
+          _bridge: { username: 'AA:BB', port: 1234 },
+          devices: {
+            cam1: { expose: false },
+          },
+        },
       ],
     })
 
@@ -277,13 +393,20 @@ describe('storeConsoleCert', () => {
     // The child bridge's credentials survive — losing them re-pairs every
     // accessory and takes the user's rooms, scenes and automations with it.
     expect(saved.platforms[1]._bridge).toEqual({ username: 'AA:BB', port: 1234 })
-    expect(saved.platforms[1].devices).toEqual({ cam1: { expose: false } })
+    expect(saved.platforms[1].devices).toEqual({
+      cam1: { expose: false },
+    })
     expect(saved.platforms[0]).toEqual({ platform: 'SomeoneElse', host: '10.0.0.1' })
     expect(saved.bridge).toEqual({ name: 'Homebridge', pin: '031-45-154' })
   })
 
   it('writes to the block for the matching host when there is more than one', () => {
-    const path = write({ platforms: [{ ...minimal, host: '10.0.0.2' }, { ...minimal, host: '10.0.0.1' }] })
+    const path = write({
+      platforms: [
+        { ...minimal, host: '10.0.0.2' },
+        { ...minimal, host: '10.0.0.1' },
+      ],
+    })
 
     storeConsoleCert(path, '10.0.0.1', 'PEM')
 
@@ -295,7 +418,12 @@ describe('storeConsoleCert', () => {
   // Better to re-learn the certificate on the next start than to write this
   // console's identity into some other console's block.
   it('refuses rather than guessing when no block matches', () => {
-    const path = write({ platforms: [{ ...minimal, host: '10.0.0.2' }, { ...minimal, host: '10.0.0.3' }] })
+    const path = write({
+      platforms: [
+        { ...minimal, host: '10.0.0.2' },
+        { ...minimal, host: '10.0.0.3' },
+      ],
+    })
 
     expect(() => storeConsoleCert(path, '10.0.0.1', 'PEM')).toThrow(/10\.0\.0\.1/)
     expect(read(path).platforms.some((block: { consoleCert?: string }) => block.consoleCert)).toBe(false)

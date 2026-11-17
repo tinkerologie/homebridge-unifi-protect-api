@@ -83,8 +83,12 @@ export class StreamUrls {
     // these to be forgotten; a late answer must not put one straight back. The
     // URL is still returned to whoever is waiting on it — they asked before the
     // eviction — it just is not remembered.
-    if (generation === this.generation && (this.keyGenerations.get(key) ?? 0) === keyGeneration)
-      this.cache.set(key, { url, at: performance.now() })
+    if (generation === this.generation && (this.keyGenerations.get(key) ?? 0) === keyGeneration) {
+      this.cache.set(key, {
+        url,
+        at: performance.now(),
+      })
+    }
     return url
   }
 
@@ -106,7 +110,10 @@ export class StreamUrls {
    */
   evict(deviceId: string): void {
     const prefix = `${deviceId}:`
-    for (const key of [...this.cache.keys(), ...this.inFlight.keys()]) {
+    for (const key of [
+      ...this.cache.keys(),
+      ...this.inFlight.keys(),
+    ]) {
       if (!key.startsWith(prefix))
         continue
       this.cache.delete(key)

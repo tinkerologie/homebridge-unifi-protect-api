@@ -52,8 +52,12 @@ describe('generated schemas parse real hardware payloads', () => {
     }
     expect(linkStationThreadStateSchema.safeParse({ network: null }).success).toBe(true)
     expect(linkStationThreadStateSchema.safeParse({ network }).success).toBe(true)
-    expect(linkStationThreadStateSchema.safeParse({ network: { ...network, panId: 'ZZZZ' } }).success).toBe(false)
-    expect(linkStationThreadStateSchema.safeParse({ network: { ...network, channel: 27 } }).success).toBe(false)
+    expect(linkStationThreadStateSchema.safeParse({
+      network: { ...network, panId: 'ZZZZ' },
+    }).success).toBe(false)
+    expect(linkStationThreadStateSchema.safeParse({
+      network: { ...network, channel: 27 },
+    }).success).toBe(false)
   })
   it('parses every camera', () => {
     // .parse, not .safeParse(...).success — a failure must name the offending
@@ -79,7 +83,10 @@ describe('generated schemas parse real hardware payloads', () => {
     // The spec sets additionalProperties: false here, so this schema alone does
     // NOT preserve unknown fields. Pinned deliberately: it is the one place a
     // firmware bump can fail validation, which is why consumers must degrade.
-    expect(existingRtspsStreamsSchema.safeParse({ ...load('rtsps-stream'), ultra: null }).success).toBe(false)
+    expect(existingRtspsStreamsSchema.safeParse({
+      ...load('rtsps-stream'),
+      ultra: null,
+    }).success).toBe(false)
   })
 
   it('accepts null for nullable enums such as relay output state', () => {

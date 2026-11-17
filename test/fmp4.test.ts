@@ -13,21 +13,34 @@ describe('fmp4Splitter', () => {
   it('emits the initialization segment once ftyp and moov have arrived', () => {
     const out: Array<{ kind: string, data: Buffer }> = []
     const split = new Fmp4Splitter((kind, data) => out.push({ kind, data }))
-    split.push(Buffer.concat([box('ftyp'), box('moov')]))
+    split.push(Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+    ]))
     expect(out.map(o => o.kind)).toEqual(['init'])
   })
 
   it('emits each moof+mdat pair as one fragment', () => {
     const out: Array<{ kind: string, data: Buffer }> = []
     const split = new Fmp4Splitter((kind, data) => out.push({ kind, data }))
-    split.push(Buffer.concat([box('ftyp'), box('moov'), box('moof'), box('mdat'), box('moof'), box('mdat')]))
+    split.push(Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+      box('moof'),
+      box('mdat'),
+      box('moof'),
+      box('mdat'),
+    ]))
     expect(out.map(o => o.kind)).toEqual(['init', 'fragment', 'fragment'])
   })
 
   it('waits for a box split across two chunks', () => {
     const out: string[] = []
     const split = new Fmp4Splitter(kind => out.push(kind))
-    const whole = Buffer.concat([box('ftyp'), box('moov')])
+    const whole = Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+    ])
     split.push(whole.subarray(0, 5))
     expect(out).toEqual([])
     split.push(whole.subarray(5))
@@ -37,7 +50,10 @@ describe('fmp4Splitter', () => {
   it('waits for a box split after the header, mid-payload', () => {
     const out: string[] = []
     const split = new Fmp4Splitter(kind => out.push(kind))
-    const whole = Buffer.concat([box('ftyp'), box('moov', Buffer.from('abcdefgh'))])
+    const whole = Buffer.concat([
+      box('ftyp'),
+      box('moov', Buffer.from('abcdefgh')),
+    ])
     // Split 10 bytes in: past the 8-byte header of the second box, but before
     // its payload is complete.
     split.push(whole.subarray(0, 10))
@@ -49,7 +65,11 @@ describe('fmp4Splitter', () => {
   it('ignores an mdat with no preceding moof rather than emitting a bare fragment', () => {
     const out: string[] = []
     const split = new Fmp4Splitter(kind => out.push(kind))
-    split.push(Buffer.concat([box('ftyp'), box('moov'), box('mdat')]))
+    split.push(Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+      box('mdat'),
+    ]))
     expect(out).toEqual(['init'])
   })
 
@@ -76,7 +96,10 @@ describe('fmp4Splitter', () => {
     const out: string[] = []
     const split = new Fmp4Splitter(kind => out.push(kind))
     // 8 MB — about 32x a measured 4 s fragment on the high substream.
-    split.push(Buffer.concat([box('moof'), box('mdat', Buffer.alloc(8 * 1024 * 1024))]))
+    split.push(Buffer.concat([
+      box('moof'),
+      box('mdat', Buffer.alloc(8 * 1024 * 1024)),
+    ]))
     expect(out).toEqual(['fragment'])
   })
 
@@ -96,8 +119,14 @@ describe('fmp4Splitter', () => {
     expect(() => split.push(bad)).toThrow(/box length/i)
 
     // Perfectly well-formed media, and still dropped: the framing is lost.
-    expect(() => split.push(Buffer.concat([box('ftyp'), box('moov')]))).not.toThrow()
-    expect(() => split.push(Buffer.concat([box('moof'), box('mdat')]))).not.toThrow()
+    expect(() => split.push(Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+    ]))).not.toThrow()
+    expect(() => split.push(Buffer.concat([
+      box('moof'),
+      box('mdat'),
+    ]))).not.toThrow()
     expect(out).toEqual([])
   })
 
@@ -140,7 +169,11 @@ describe('fmp4Splitter', () => {
   it('refuses a box between moof and mdat rather than emitting a fragment with bytes missing', () => {
     const out: Array<{ kind: string, data: Buffer }> = []
     const split = new Fmp4Splitter((kind, data) => out.push({ kind, data }))
-    split.push(Buffer.concat([box('ftyp'), box('moov'), box('moof')]))
+    split.push(Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+      box('moof'),
+    ]))
     expect(() => split.push(box('free'))).toThrow(/between moof and mdat/i)
     // And it is latched, like the length guard: the following mdat is dropped
     // rather than emitted as a fragment whose moof it no longer matches.
@@ -151,7 +184,13 @@ describe('fmp4Splitter', () => {
   it('still ignores an unknown box outside a fragment, which iso-bmff asks of a reader', () => {
     const out: string[] = []
     const split = new Fmp4Splitter(kind => out.push(kind))
-    split.push(Buffer.concat([box('ftyp'), box('moov'), box('free'), box('moof'), box('mdat')]))
+    split.push(Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+      box('free'),
+      box('moof'),
+      box('mdat'),
+    ]))
     expect(out).toEqual(['init', 'fragment'])
   })
 
@@ -163,7 +202,14 @@ describe('fmp4Splitter', () => {
       if (kind === 'fragment')
         chunks.push(data)
     })
-    split.push(Buffer.concat([box('ftyp'), box('moov'), moof, mdat]))
-    expect(chunks).toEqual([Buffer.concat([moof, mdat])])
+    split.push(Buffer.concat([
+      box('ftyp'),
+      box('moov'),
+      moof,
+      mdat,
+    ]))
+    expect(chunks).toEqual([
+      Buffer.concat([moof, mdat]),
+    ])
   })
 })

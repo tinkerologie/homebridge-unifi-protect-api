@@ -121,7 +121,10 @@ export class FakeCameraController {
  */
 export class FakeDoorbellController extends FakeCameraController {
   constructServices(): FakeService[] {
-    return [...super.constructServices(), new FakeService(S.Doorbell, 'Doorbell')]
+    return [
+      ...super.constructServices(),
+      new FakeService(S.Doorbell, 'Doorbell'),
+    ]
   }
 }
 
@@ -176,6 +179,13 @@ export const hap = {
   MediaContainerType: { FRAGMENTED_MP4: 0 },
   EventTriggerOption: { MOTION: 1, DOORBELL: 2 },
   AudioRecordingCodecType: { AAC_LC: 0, AAC_ELD: 1 },
-  AudioRecordingSamplerate: { KHZ_8: 0, KHZ_16: 1, KHZ_24: 2, KHZ_32: 3, KHZ_44_1: 4, KHZ_48: 5 },
+  AudioRecordingSamplerate: {
+    KHZ_8: 0,
+    KHZ_16: 1,
+    KHZ_24: 2,
+    KHZ_32: 3,
+    KHZ_44_1: 4,
+    KHZ_48: 5,
+  },
   AudioBitrate: { VARIABLE: 0, CONSTANT: 1 },
 }

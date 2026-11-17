@@ -79,7 +79,11 @@ describe('httpsRequestFn', () => {
       const chunks: Buffer[] = []
       req.on('data', (c: Buffer) => chunks.push(c))
       req.on('end', () => {
-        seen = { method: req.method, key: req.headers['x-api-key'], body: Buffer.concat(chunks).toString() }
+        seen = {
+          method: req.method,
+          key: req.headers['x-api-key'],
+          body: Buffer.concat(chunks).toString(),
+        }
         res.writeHead(204)
         res.end()
       })
@@ -127,7 +131,9 @@ describe('httpsRequestFn', () => {
   it('refuses to send anything at all when no certificate has been trusted', async () => {
     const peer = await serve(real)
 
-    await expect(httpsRequestFn(`${peer.base}/thing`, { headers: { 'X-API-KEY': API_KEY } }))
+    await expect(httpsRequestFn(`${peer.base}/thing`, {
+      headers: { 'X-API-KEY': API_KEY },
+    }))
       .rejects
       .toThrow(/certificate has(?: not)? been trusted/)
 
@@ -176,12 +182,16 @@ describe('pinnedTlsOptions checkServerIdentity', () => {
     const { checkServerIdentity } = pinnedTlsOptions(real.cert)
     // Same leaf the pin trusts — the hostname check that would otherwise fail
     // (cert is for unifi.local, connection is by IP) is deliberately skipped.
-    expect(checkServerIdentity('127.0.0.1', { raw: derOf(real.cert) } as never)).toBeUndefined()
+    expect(checkServerIdentity('127.0.0.1', {
+      raw: derOf(real.cert),
+    } as never)).toBeUndefined()
   })
 
   it('rejects any other certificate with a pin-mismatch code', () => {
     const { checkServerIdentity } = pinnedTlsOptions(real.cert)
-    const error = checkServerIdentity('127.0.0.1', { raw: derOf(impostor.cert) } as never)
+    const error = checkServerIdentity('127.0.0.1', {
+      raw: derOf(impostor.cert),
+    } as never)
     expect(error).toBeInstanceOf(Error)
     // The code routes it to the UI's certificate-error message rather than a
     // generic failure.

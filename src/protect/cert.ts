@@ -81,7 +81,10 @@ export function fetchConsoleCert(host: string, timeoutMs = 10_000): Promise<Cons
         return
       }
       const pem = toPem(raw)
-      resolve({ pem, fingerprint: fingerprintOf(pem) })
+      resolve({
+        pem,
+        fingerprint: fingerprintOf(pem),
+      })
     })
     socket.setTimeout(timeoutMs, () => socket.destroy(new Error(`Timed out reading the certificate of ${host}`)))
     socket.on('error', reject)

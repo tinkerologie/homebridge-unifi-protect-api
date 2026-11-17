@@ -38,7 +38,9 @@ function harness(open: () => Promise<number | undefined>) {
     socket: socket as never,
     open,
     forward: (packet, port) => forwarded.push({ packet, port }),
-    log: { warn: (m: string) => warnings.push(m) },
+    log: {
+      warn: (m: string) => warnings.push(m),
+    },
   })
   return { socket, forwarded, warnings, relay }
 }
@@ -201,7 +203,12 @@ describe('talkbackSdp', () => {
     const v4 = talkbackSdp({ listenPort: 5000, payloadType: 110, key: KEY })
     expect(v4).toContain('c=IN IP4 127.0.0.1')
     expect(v4).toContain('o=- 0 0 IN IP4 127.0.0.1')
-    const v6 = talkbackSdp({ listenPort: 5000, payloadType: 110, key: KEY, ipv6: true })
+    const v6 = talkbackSdp({
+      listenPort: 5000,
+      payloadType: 110,
+      key: KEY,
+      ipv6: true,
+    })
     expect(v6).toContain('c=IN IP6 ::1')
     expect(v6).toContain('o=- 0 0 IN IP6 ::1')
     expect(v6).not.toContain('127.0.0.1')
@@ -233,7 +240,12 @@ describe('buildTalkbackArgs', () => {
   // OUTPUT url: `-f rtp` does not constrain the protocol and the whitelist is
   // input-side only, so a spoofed console could turn this into a file write.
   it('refuses a destination that is not rtp, without quoting it', () => {
-    for (const destination of ['file:///etc/passwd', 'http://evil/x', 'srtp://192.168.10.9:7004', '/tmp/out']) {
+    for (const destination of [
+      'file:///etc/passwd',
+      'http://evil/x',
+      'srtp://192.168.10.9:7004',
+      '/tmp/out',
+    ]) {
       expect(() => buildTalkbackArgs({ destination, sampleRate: 24000 })).toThrow(/not an rtp:\/\/ url/)
       try {
         buildTalkbackArgs({ destination, sampleRate: 24000 })

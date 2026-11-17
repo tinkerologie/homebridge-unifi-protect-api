@@ -139,7 +139,9 @@ export function safeText(value: string): string {
  * this repo before.
  */
 export function sanitizingLog(log: Logging): Logging {
-  const clean = (value: unknown): unknown => (typeof value === 'string' ? safeText(value) : value)
+  const clean = (value: unknown): unknown => (typeof value === 'string'
+    ? safeText(value)
+    : value)
   const wrapped = ((message: string, ...params: unknown[]) => log(safeText(message), ...params.map(clean))) as Logging
   wrapped.prefix = log.prefix
   wrapped.info = (message, ...params) => log.info(safeText(message), ...params.map(clean))
@@ -166,7 +168,9 @@ function labelFor(device: DiscoveredDevice): string {
   // `typeof`, not `?.`: `validate` degrades to the raw payload, so `name` is
   // only probably a string, and a method call on a number would throw inside a
   // fire-and-forget discovery.
-  const named = typeof device.name === 'string' ? safeText(device.name) : ''
+  const named = typeof device.name === 'string'
+    ? safeText(device.name)
+    : ''
   // The fallback interpolates console-supplied values too, and this label
   // becomes `accessory.displayName` — which HomeKit renders, where the log
   // wrapper cannot reach.
@@ -311,12 +315,14 @@ function recordingOptions(hap: HAP, doorbell: boolean): CameraRecordingOptions {
       ],
     },
     audio: {
-      codecs: [{
-        type: hap.AudioRecordingCodecType.AAC_LC,
-        audioChannels: 1,
-        bitrateMode: hap.AudioBitrate.VARIABLE,
-        samplerate: hap.AudioRecordingSamplerate.KHZ_32,
-      }],
+      codecs: [
+        {
+          type: hap.AudioRecordingCodecType.AAC_LC,
+          audioChannels: 1,
+          bitrateMode: hap.AudioBitrate.VARIABLE,
+          samplerate: hap.AudioRecordingSamplerate.KHZ_32,
+        },
+      ],
     },
   }
 }
@@ -455,9 +461,14 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
 
   private readonly cameraCallbacks: CameraCallbacks = {
     setLed: async (deviceId, on) => {
-      await this.client.patchCamera(deviceId, { ledSettings: { isEnabled: on } })
+      await this.client.patchCamera(deviceId, {
+        ledSettings: { isEnabled: on },
+      })
       // Covers the discovery path — see applyRecentLedWrite.
-      this.recentLedWrites.set(deviceId, { on, at: performance.now() })
+      this.recentLedWrites.set(deviceId, {
+        on,
+        at: performance.now(),
+      })
       // Optimistic cache update. Without this, an unrelated deviceUpdate frame
       // landing between this write and the console echoing the change back
       // rebuilds the switch from the stale cached ledSettings and flips it
@@ -490,7 +501,9 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
       this.optimisticLight(deviceId, device => ({ ...device, isLightOn: on, isLightForceEnabled: on }))
     },
     setBrightness: async (deviceId, level) => {
-      await this.client.patchLight(deviceId, { lightDeviceSettings: { ledLevel: level } })
+      await this.client.patchLight(deviceId, {
+        lightDeviceSettings: { ledLevel: level },
+      })
       this.recordLightWrite(deviceId, { level })
       this.optimisticLight(deviceId, (device) => {
         const lightDeviceSettings = { ...(device.lightDeviceSettings as Record<string, unknown> | undefined), ledLevel: level }
@@ -501,8 +514,14 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
 
   private recordLightWrite(deviceId: string, patch: { on?: boolean, level?: number }): void {
     const previous = this.recentLightWrites.get(deviceId)
-    const fresh = previous && performance.now() - previous.at < LED_WRITE_GRACE_MS ? previous : undefined
-    this.recentLightWrites.set(deviceId, { ...fresh, ...patch, at: performance.now() })
+    const fresh = previous && performance.now() - previous.at < LED_WRITE_GRACE_MS
+      ? previous
+      : undefined
+    this.recentLightWrites.set(deviceId, {
+      ...fresh,
+      ...patch,
+      at: performance.now(),
+    })
   }
 
   private optimisticLight(deviceId: string, update: (device: Record<string, unknown>) => Record<string, unknown>): void {
@@ -522,12 +541,17 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
     setVolume: async (deviceId, volume) => {
       const accessory = this.accessories.get(this.api.hap.uuid.generate(deviceId))
       const device = accessory?.context.device as Record<string, unknown> | undefined
-      const rings = Array.isArray(device?.ringSettings) ? device.ringSettings as Record<string, unknown>[] : []
+      const rings = Array.isArray(device?.ringSettings)
+        ? device.ringSettings as Record<string, unknown>[]
+        : []
       // Preserve every existing ring field (cameraId, ringtoneId, repeatTimes) —
       // the PATCH schema requires them — and override only the volume.
       const ringSettings = rings.map(ring => ({ ...ring, volume }))
       await this.client.patchChime(deviceId, { ringSettings })
-      this.recentChimeWrites.set(deviceId, { volume, at: performance.now() })
+      this.recentChimeWrites.set(deviceId, {
+        volume,
+        at: performance.now(),
+      })
       // Optimistic cache update, mirroring the light path.
       if (accessory)
         accessory.context.device = { ...device, ringSettings }
@@ -561,7 +585,12 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
 
     // `consoleCert` may be undefined on a first run. Both transports refuse to
     // send anything until `ensureTrust` sets it — see fail-closed there.
-    const shared = { host: this.config.host, apiKey: this.config.apiKey, log: this.log, consoleCert: this.config.consoleCert }
+    const shared = {
+      host: this.config.host,
+      apiKey: this.config.apiKey,
+      log: this.log,
+      consoleCert: this.config.consoleCert,
+    }
     this.client = new ProtectClient(shared)
     this.events = new ProtectEvents(shared)
 
@@ -588,7 +617,9 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
       // Same reason, and a stronger one: a recording encoder runs continuously,
       // and its restart timer retries forever. A snapshot of the keys, because
       // disposeRecorder deletes from the map it would otherwise be iterating.
-      for (const uuid of [...this.recorders.keys()])
+      for (const uuid of [
+        ...this.recorders.keys(),
+      ])
         this.disposeRecorder(uuid)
       this.events?.stop()
       // Every active event holds a failsafe timer. Leaked, they keep the Node
@@ -603,7 +634,9 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
    */
   private discoverSafely(): void {
     this.discover().catch((error: unknown) => {
-      this.log.error(`Discovery failed unexpectedly: ${error instanceof Error ? error.message : String(error)}`)
+      this.log.error(`Discovery failed unexpectedly: ${error instanceof Error
+        ? error.message
+        : String(error)}`)
       // Without this the plugin is permanently blind: an unexpected throw (from
       // reconcile(), say) leaves no event bus, no polling and — unlike every
       // other failure path — no retry either.
@@ -640,7 +673,9 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
       trailing = this.pending
       this.pending = false
     })
-    return this.inFlight.then(() => (trailing ? this.discover() : undefined))
+    return this.inFlight.then(() => (trailing
+      ? this.discover()
+      : undefined))
   }
 
   private async runDiscovery(): Promise<void> {
@@ -728,7 +763,9 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
       presented = await this.readConsoleCert(config.host)
     }
     catch (error) {
-      this.log.warn(`Could not read the certificate of the console at ${config.host}. ${error instanceof Error ? error.message : String(error)}`)
+      this.log.warn(`Could not read the certificate of the console at ${config.host}. ${error instanceof Error
+        ? error.message
+        : String(error)}`)
       this.scheduleRetry()
       return false
     }
@@ -768,7 +805,9 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
     catch (error) {
       // Not fatal: the certificate is trusted for this session either way, it
       // just gets re-learned (and re-logged) after a restart.
-      this.log.warn(`Trusted the console certificate for this session but could not save it to config.json (${error instanceof Error ? error.message : String(error)}). It will be trusted again on the next restart.`)
+      this.log.warn(`Trusted the console certificate for this session but could not save it to config.json (${error instanceof Error
+        ? error.message
+        : String(error)}). It will be trusted again on the next restart.`)
     }
   }
 
@@ -798,7 +837,13 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
     // Console inventory, before the expose filter — "Added" lines below report
     // what actually reached HomeKit.
     this.log.info(`The console reports ${cameras.length} camera(s), ${lights.length} light(s), ${sensors.length} sensor(s), ${chimes.length} chime(s), ${viewers.length} viewer(s).`)
-    return [...cameras, ...lights, ...sensors, ...chimes, ...viewers] as DiscoveredDevice[]
+    return [
+      ...cameras,
+      ...lights,
+      ...sensors,
+      ...chimes,
+      ...viewers,
+    ] as DiscoveredDevice[]
   }
 
   /**
@@ -979,7 +1024,14 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
         // still make hap-nodejs build the whole RecordingManagement. hap-nodejs
         // creates the CameraOperatingMode service itself from this; never add
         // it by hand.
-        ...(recorder ? { recording: { options: recordingOptions(this.api.hap, isDoorbell), delegate: recorder } } : {}),
+        ...(recorder
+          ? {
+              recording: {
+                options: recordingOptions(this.api.hap, isDoorbell),
+                delegate: recorder,
+              },
+            }
+          : {}),
       }))
       // AFTER configureController, so a throw from it leaves nothing registered
       // that the removal sweep would have to clean up.
@@ -1030,8 +1082,11 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
     // user's HomeKit room/scene/automation membership over a startup blip. A
     // package accessory that does not exist yet is not created for a camera
     // with no usable ffmpeg: that is a genuine "nothing to show yet".
-    if (!this.caps || !this.urls)
-      return this.accessories.has(uuid) ? uuid : undefined
+    if (!this.caps || !this.urls) {
+      return this.accessories.has(uuid)
+        ? uuid
+        : undefined
+    }
 
     const label = `${boundedName(labelFor(device), 49)} Package Camera`
     // From here on the accessory belongs in HomeKit, so the UUID is returned
@@ -1065,8 +1120,12 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
         // Suffixed like `packageSeed`'s UUID: two bridged accessories sharing a
         // serial is one accessory as far as HomeKit's identity tracking cares.
         info.setCharacteristic(C.Manufacturer, 'Ubiquiti')
-          .setCharacteristic(C.Model, typeof raw.modelKey === 'string' ? raw.modelKey : 'camera')
-          .setCharacteristic(C.SerialNumber, `${typeof raw.mac === 'string' ? raw.mac : String(device.id ?? 'unknown')}-package`)
+          .setCharacteristic(C.Model, typeof raw.modelKey === 'string'
+            ? raw.modelKey
+            : 'camera')
+          .setCharacteristic(C.SerialNumber, `${typeof raw.mac === 'string'
+            ? raw.mac
+            : String(device.id ?? 'unknown')}-package`)
       }
 
       // Already wired means a later discovery; `stopped` means shutdown has

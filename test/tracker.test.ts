@@ -6,7 +6,13 @@ import { routeEvent } from '../src/accessories/router.js'
 import { EventTracker } from '../src/accessories/tracker.js'
 
 function ev(eventId: string, subtypes: string[], phase: RoutedEvent['phase'] = 'start'): RoutedEvent {
-  return { eventId, deviceId: 'cam1', subtypes, phase, stateless: false }
+  return {
+    eventId,
+    deviceId: 'cam1',
+    subtypes,
+    phase,
+    stateless: false,
+  }
 }
 
 function loadFixture(name: string): unknown[] {
@@ -20,7 +26,9 @@ describe('eventTracker', () => {
 
   it('activates a subtype on first holder only', () => {
     const t = new EventTracker()
-    expect(t.apply(ev('e1', ['detect-person']))).toEqual([{ deviceId: 'cam1', subtype: 'detect-person', active: true }])
+    expect(t.apply(ev('e1', ['detect-person']))).toEqual([
+      { deviceId: 'cam1', subtype: 'detect-person', active: true },
+    ])
     // Second overlapping event: already active, so no transition is reported.
     expect(t.apply(ev('e2', ['detect-person']))).toEqual([])
   })
@@ -31,7 +39,9 @@ describe('eventTracker', () => {
     t.apply(ev('e2', ['detect-person']))
     expect(t.apply(ev('e1', ['detect-person'], 'end'))).toEqual([])
     expect(t.apply(ev('e2', ['detect-person'], 'end')))
-      .toEqual([{ deviceId: 'cam1', subtype: 'detect-person', active: false }])
+      .toEqual([
+        { deviceId: 'cam1', subtype: 'detect-person', active: false },
+      ])
   })
 
   it('does not double-count a duplicate start for one event id', () => {
@@ -39,7 +49,9 @@ describe('eventTracker', () => {
     t.apply(ev('e1', ['motion']))
     expect(t.apply(ev('e1', ['motion']))).toEqual([])
     expect(t.apply(ev('e1', ['motion'], 'end')))
-      .toEqual([{ deviceId: 'cam1', subtype: 'motion', active: false }])
+      .toEqual([
+        { deviceId: 'cam1', subtype: 'motion', active: false },
+      ])
   })
 
   it('returns an on-then-off pair for a momentary event', () => {
@@ -54,13 +66,17 @@ describe('eventTracker', () => {
   // sensor OFF while a longer event was still holding it on.
   it('a momentary arriving while another event holds the subtype changes nothing', () => {
     const t = new EventTracker()
-    expect(t.apply(ev('e1', ['motion']))).toEqual([{ deviceId: 'cam1', subtype: 'motion', active: true }])
+    expect(t.apply(ev('e1', ['motion']))).toEqual([
+      { deviceId: 'cam1', subtype: 'motion', active: true },
+    ])
     // No transitions in either direction — the sensor is already on and e1 is
     // still running, so it must stay on.
     expect(t.apply(ev('e2', ['motion'], 'momentary'))).toEqual([])
     // And e1's own end still clears it: the momentary must not have left a
     // stray holder behind either.
-    expect(t.apply(ev('e1', ['motion'], 'end'))).toEqual([{ deviceId: 'cam1', subtype: 'motion', active: false }])
+    expect(t.apply(ev('e1', ['motion'], 'end'))).toEqual([
+      { deviceId: 'cam1', subtype: 'motion', active: false },
+    ])
     expect(t.activeCount).toBe(0)
   })
 
@@ -72,8 +88,16 @@ describe('eventTracker', () => {
 
   it('treats a stateless event as a single trigger and stores nothing', () => {
     const t = new EventTracker()
-    const routed: RoutedEvent = { eventId: 'r1', deviceId: 'cam1', subtypes: ['ring'], phase: 'start', stateless: true }
-    expect(t.apply(routed)).toEqual([{ deviceId: 'cam1', subtype: 'ring', active: true }])
+    const routed: RoutedEvent = {
+      eventId: 'r1',
+      deviceId: 'cam1',
+      subtypes: ['ring'],
+      phase: 'start',
+      stateless: true,
+    }
+    expect(t.apply(routed)).toEqual([
+      { deviceId: 'cam1', subtype: 'ring', active: true },
+    ])
     expect(t.activeCount).toBe(0)
   })
 
@@ -82,9 +106,23 @@ describe('eventTracker', () => {
     // Treating that end as a second trigger would surface a doorbell press as
     // "active" again minutes later.
     const t = new EventTracker()
-    const start: RoutedEvent = { eventId: 'r1', deviceId: 'cam1', subtypes: ['ring'], phase: 'start', stateless: true }
-    const end: RoutedEvent = { eventId: 'r1', deviceId: 'cam1', subtypes: ['ring'], phase: 'end', stateless: true }
-    expect(t.apply(start)).toEqual([{ deviceId: 'cam1', subtype: 'ring', active: true }])
+    const start: RoutedEvent = {
+      eventId: 'r1',
+      deviceId: 'cam1',
+      subtypes: ['ring'],
+      phase: 'start',
+      stateless: true,
+    }
+    const end: RoutedEvent = {
+      eventId: 'r1',
+      deviceId: 'cam1',
+      subtypes: ['ring'],
+      phase: 'end',
+      stateless: true,
+    }
+    expect(t.apply(start)).toEqual([
+      { deviceId: 'cam1', subtype: 'ring', active: true },
+    ])
     expect(t.apply(end)).toEqual([])
   })
 
@@ -92,8 +130,16 @@ describe('eventTracker', () => {
     // An `add` frame with a numeric `end` routes as `momentary`, not `start`.
     // A gate of `phase === 'start'` dropped that press on the floor.
     const t = new EventTracker()
-    const routed: RoutedEvent = { eventId: 'r2', deviceId: 'cam1', subtypes: ['ring'], phase: 'momentary', stateless: true }
-    expect(t.apply(routed)).toEqual([{ deviceId: 'cam1', subtype: 'ring', active: true }])
+    const routed: RoutedEvent = {
+      eventId: 'r2',
+      deviceId: 'cam1',
+      subtypes: ['ring'],
+      phase: 'momentary',
+      stateless: true,
+    }
+    expect(t.apply(routed)).toEqual([
+      { deviceId: 'cam1', subtype: 'ring', active: true },
+    ])
     expect(t.activeCount).toBe(0)
   })
 
@@ -103,7 +149,9 @@ describe('eventTracker', () => {
     t.onFailsafe = c => changes.push(...c)
     t.apply(ev('e1', ['motion']))
     vi.advanceTimersByTime(1001)
-    expect(changes).toEqual([{ deviceId: 'cam1', subtype: 'motion', active: false }])
+    expect(changes).toEqual([
+      { deviceId: 'cam1', subtype: 'motion', active: false },
+    ])
     expect(t.activeCount).toBe(0)
   })
 
@@ -138,13 +186,19 @@ describe('eventTracker', () => {
   it('deduplicates a redelivered end per event id, not per most-recent id', () => {
     const t = new EventTracker()
     t.apply(ev('e1', ['motion']))
-    expect(t.apply(ev('e1', ['motion'], 'end'))).toEqual([{ deviceId: 'cam1', subtype: 'motion', active: false }])
-    expect(t.apply(ev('e2', ['motion']))).toEqual([{ deviceId: 'cam1', subtype: 'motion', active: true }])
+    expect(t.apply(ev('e1', ['motion'], 'end'))).toEqual([
+      { deviceId: 'cam1', subtype: 'motion', active: false },
+    ])
+    expect(t.apply(ev('e2', ['motion']))).toEqual([
+      { deviceId: 'cam1', subtype: 'motion', active: true },
+    ])
     // e1's end, redelivered after e2 took the subtype over. It must not touch
     // e2's holder — motion is genuinely active.
     expect(t.apply(ev('e1', ['motion'], 'end'))).toEqual([])
     expect(t.apply(ev('e1', ['motion'], 'end'))).toEqual([])
-    expect(t.apply(ev('e2', ['motion'], 'end'))).toEqual([{ deviceId: 'cam1', subtype: 'motion', active: false }])
+    expect(t.apply(ev('e2', ['motion'], 'end'))).toEqual([
+      { deviceId: 'cam1', subtype: 'motion', active: false },
+    ])
   })
 
   describe('driven from real captured hardware frames (test/fixtures/events/end-frames.json)', () => {
@@ -183,8 +237,12 @@ describe('eventTracker', () => {
         // in fixture order — duplicates included.
         const changes = t.apply(routed)
         const offs = changes.filter(change => !change.active)
-        if (offs.length)
-          offsByEvent.set(routed.eventId, [...(offsByEvent.get(routed.eventId) ?? []), ...offs])
+        if (offs.length) {
+          offsByEvent.set(routed.eventId, [
+            ...(offsByEvent.get(routed.eventId) ?? []),
+            ...offs,
+          ])
+        }
       }
 
       // Every distinct, stateful event id in the fixture ends exactly once,

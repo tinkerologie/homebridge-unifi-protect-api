@@ -47,10 +47,17 @@ export interface ProtectClientOptions {
   consoleCert?: string
 }
 
-const noopLog: ProtectLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+const noopLog: ProtectLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+}
 
 /** `/v1/meta/info` is the one endpoint the spec declares inline, so it has no generated schema. */
-const metaInfoSchema = z.looseObject({ applicationVersion: z.string() })
+const metaInfoSchema = z.looseObject({
+  applicationVersion: z.string(),
+})
 
 export type { ChannelQuality, SnapshotChannel } from './schemas.js'
 
@@ -156,7 +163,9 @@ export class ProtectClient {
       query.set('highQuality', String(options.highQuality))
     if (options.channel !== undefined)
       query.set('channel', options.channel)
-    const suffix = query.size > 0 ? `?${query.toString()}` : ''
+    const suffix = query.size > 0
+      ? `?${query.toString()}`
+      : ''
     const response = await this.send(`/v1/cameras/${encodeURIComponent(id)}/snapshot${suffix}`)
     return response.body
   }
@@ -221,7 +230,9 @@ export class ProtectClient {
   }
 
   private send(path: string, method = 'GET', body?: unknown) {
-    const payload = body === undefined ? undefined : JSON.stringify(body)
+    const payload = body === undefined
+      ? undefined
+      : JSON.stringify(body)
     return this.queue.run(async () => {
       let response
       try {
@@ -232,7 +243,10 @@ export class ProtectClient {
             'Accept': 'application/json',
             ...(payload === undefined
               ? {}
-              : { 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) }),
+              : {
+                  'Content-Type': 'application/json',
+                  'Content-Length': String(Buffer.byteLength(payload)),
+                }),
           },
           body: payload,
           timeoutMs: this.timeoutMs,
@@ -274,7 +288,9 @@ export class ProtectClient {
 
   /** Belt and braces — nothing is expected to carry the key, but nothing may leak it either. */
   private redact(text: string): string {
-    return this.apiKey.length > 0 ? text.split(this.apiKey).join('***') : text
+    return this.apiKey.length > 0
+      ? text.split(this.apiKey).join('***')
+      : text
   }
 }
 
@@ -289,7 +305,9 @@ export class ProtectClient {
 const MAX_RETRY_AFTER_MS = 60_000
 
 function retryAfterMs(header: string | string[] | undefined): number | undefined {
-  const raw = Array.isArray(header) ? header[0] : header
+  const raw = Array.isArray(header)
+    ? header[0]
+    : header
   if (raw === undefined)
     return undefined
   const seconds = Number(raw)

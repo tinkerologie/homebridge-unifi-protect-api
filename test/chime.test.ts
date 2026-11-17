@@ -7,7 +7,13 @@ const chimes = JSON.parse(readFileSync('test/fixtures/chimes.json', 'utf8'))
 const dingDong = chimes[0]
 
 const api = { hap } as never
-const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), success: vi.fn() }
+const log = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  success: vi.fn(),
+}
 
 function setup(device: Record<string, unknown>, overrides: { setVolume?: (id: string, v: number) => Promise<void> } = {}) {
   const setVolume = vi.fn(overrides.setVolume ?? (async () => {}))
@@ -21,13 +27,20 @@ function setup(device: Record<string, unknown>, overrides: { setVolume?: (id: st
 describe('chimeVolume', () => {
   it('reads the loudest paired ring', () => {
     expect(chimeVolume(dingDong)).toBe(80)
-    expect(chimeVolume({ ringSettings: [{ volume: 20 }, { volume: 65 }] })).toBe(65)
+    expect(chimeVolume({
+      ringSettings: [
+        { volume: 20 },
+        { volume: 65 },
+      ],
+    })).toBe(65)
   })
 
   it('is silent when there are no ring settings or they are malformed', () => {
     expect(chimeVolume({})).toBe(0)
     expect(chimeVolume({ ringSettings: 'nope' })).toBe(0)
-    expect(chimeVolume({ ringSettings: [{}, 7] })).toBe(0)
+    expect(chimeVolume({
+      ringSettings: [{}, 7],
+    })).toBe(0)
   })
 })
 
@@ -53,7 +66,12 @@ describe('buildChimeServices', () => {
   })
 
   it('reads off when every ring is silent', () => {
-    const { accessory } = setup({ ...dingDong, ringSettings: [{ cameraId: 'c', volume: 0, repeatTimes: 1 }] })
+    const { accessory } = setup({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 0, repeatTimes: 1 },
+      ],
+    })
     expect(accessory.getServiceById(S.Lightbulb, 'chime-volume')!.valueOf_(C.On)).toBe(false)
   })
 
@@ -78,7 +96,12 @@ describe('buildChimeServices', () => {
   })
 
   it('restores full volume when switched on from silent', async () => {
-    const silent = { ...dingDong, ringSettings: [{ cameraId: 'c', volume: 0, repeatTimes: 1 }] }
+    const silent = {
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 0, repeatTimes: 1 },
+      ],
+    }
     const { accessory, setVolume } = setup(silent)
     await accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.On).setHandler!(true)
     expect(setVolume).toHaveBeenCalledWith(dingDong.id, 100)
@@ -107,7 +130,12 @@ describe('buildChimeServices', () => {
     const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
     await bulb.getCharacteristic(C.Brightness).setHandler!(40)
     await bulb.getCharacteristic(C.On).setHandler!(false)
-    build({ ...dingDong, ringSettings: [{ cameraId: 'c', volume: 0, repeatTimes: 1 }] })
+    build({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 0, repeatTimes: 1 },
+      ],
+    })
     await bulb.getCharacteristic(C.On).setHandler!(true)
     expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([40, 0, 40])
   })
@@ -115,9 +143,19 @@ describe('buildChimeServices', () => {
   it('remembers an audible level changed directly in Protect', async () => {
     const { accessory, build, setVolume } = setup(dingDong)
     const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
-    build({ ...dingDong, ringSettings: [{ cameraId: 'c', volume: 70, repeatTimes: 1 }] })
+    build({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 70, repeatTimes: 1 },
+      ],
+    })
     await bulb.getCharacteristic(C.On).setHandler!(false)
-    build({ ...dingDong, ringSettings: [{ cameraId: 'c', volume: 0, repeatTimes: 1 }] })
+    build({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 0, repeatTimes: 1 },
+      ],
+    })
     await bulb.getCharacteristic(C.On).setHandler!(true)
     expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([0, 70])
   })

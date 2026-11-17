@@ -11,7 +11,10 @@ import process from 'node:process'
 import { connect } from 'node:tls'
 
 const env = Object.fromEntries(
-  readFileSync('.env', 'utf8').split('\n').map(l => l.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean).map(m => [m[1], m[2].trim()]),
+  readFileSync('.env', 'utf8').split('\n').map(l => l.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean).map(m => [
+    m[1],
+    m[2].trim(),
+  ]),
 )
 const host = env.PROTECT_HOST
 const apiKey = env.PROTECT_API_KEY
@@ -30,7 +33,9 @@ const pinned = await new Promise((resolve, reject) => {
   const socket = connect({
     host: url.hostname,
     port: Number(url.port || 443),
-    servername: isIP(url.hostname) ? undefined : url.hostname,
+    servername: isIP(url.hostname)
+      ? undefined
+      : url.hostname,
     rejectUnauthorized: false,
   }, () => {
     const raw = socket.getPeerCertificate().raw
@@ -42,7 +47,13 @@ const pinned = await new Promise((resolve, reject) => {
     }
     console.log(`Pinned to ${host} — SHA-256 ${fingerprint}`)
     const pem = `-----BEGIN CERTIFICATE-----\n${raw.toString('base64').replace(/.{1,64}/g, '$&\n')}-----END CERTIFICATE-----\n`
-    resolve({ rejectUnauthorized: true, ca: [pem], checkServerIdentity: (_h, c) => c.raw.equals(raw) ? undefined : new Error('cert changed') })
+    resolve({
+      rejectUnauthorized: true,
+      ca: [pem],
+      checkServerIdentity: (_h, c) => c.raw.equals(raw)
+        ? undefined
+        : new Error('cert changed'),
+    })
   })
   socket.setTimeout(15_000, () => socket.destroy(new Error('timed out reading the certificate')))
   socket.on('error', reject)
@@ -50,10 +61,16 @@ const pinned = await new Promise((resolve, reject) => {
 
 function get(path) {
   return new Promise((resolve, reject) => {
-    const r = https.request(`https://${host}/proxy/protect/integration/v1${path}`, { headers: { 'X-API-KEY': apiKey }, ...pinned }, (res) => {
+    const r = https.request(`https://${host}/proxy/protect/integration/v1${path}`, {
+      headers: { 'X-API-KEY': apiKey },
+      ...pinned,
+    }, (res) => {
       const chunks = []
       res.on('data', c => chunks.push(c))
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }))
+      res.on('end', () => resolve({
+        status: res.statusCode,
+        body: Buffer.concat(chunks).toString(),
+      }))
     })
     r.setTimeout(15_000, () => r.destroy(new Error('timed out')))
     r.on('error', reject)

@@ -8,7 +8,14 @@
  */
 
 /** Detection types Protect can report. Anything else is ignored. */
-const DETECT_TYPES = new Set(['person', 'vehicle', 'package', 'licensePlate', 'face', 'animal'])
+const DETECT_TYPES = new Set([
+  'person',
+  'vehicle',
+  'package',
+  'licensePlate',
+  'face',
+  'animal',
+])
 
 /**
  * Only the two audio detections with a real HomeKit equivalent. Bark, car horn,
@@ -87,7 +94,12 @@ export function routeEvent(frame: unknown): RoutedEvent | null {
     // smart detection IS motion, so the generic sensor rides along with the
     // per-type ones; the tracker's holder counts keep it on until every
     // overlapping event has ended.
-    subtypes = ['motion', ...detectSubtypes(item, t => (DETECT_TYPES.has(t) ? `detect-${t}` : undefined))]
+    subtypes = [
+      'motion',
+      ...detectSubtypes(item, t => (DETECT_TYPES.has(t)
+        ? `detect-${t}`
+        : undefined)),
+    ]
   }
   else if (type === 'smartAudioDetect') {
     subtypes = detectSubtypes(item, t => AUDIO_SUBTYPES.get(t))
@@ -108,8 +120,16 @@ export function routeEvent(frame: unknown): RoutedEvent | null {
   // here, so neither shape can be mistaken for a completed event.
   const ended = typeof item.end === 'number'
   const phase: EventPhase = ended
-    ? (outer.type === 'add' ? 'momentary' : 'end')
+    ? (outer.type === 'add'
+        ? 'momentary'
+        : 'end')
     : 'start'
 
-  return { eventId, deviceId, subtypes, phase, stateless }
+  return {
+    eventId,
+    deviceId,
+    subtypes,
+    phase,
+    stateless,
+  }
 }

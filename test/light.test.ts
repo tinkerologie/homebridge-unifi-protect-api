@@ -13,7 +13,13 @@ const lights = JSON.parse(readFileSync('test/fixtures/lights.json', 'utf8'))
 const byName = (n: string) => lights.find((l: { name: string }) => l.name === n)
 
 const api = { hap } as never
-const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), success: vi.fn() }
+const log = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  success: vi.fn(),
+}
 
 function setup(
   device: Record<string, unknown>,
@@ -25,7 +31,12 @@ function setup(
   const build = (next: Record<string, unknown> = device) =>
     buildLightServices(api, log as never, accessory as never, next, { setOn, setBrightness })
   build()
-  return { accessory, build, setOn, setBrightness }
+  return {
+    accessory,
+    build,
+    setOn,
+    setBrightness,
+  }
 }
 
 describe('brightness mapping', () => {
@@ -81,7 +92,11 @@ describe('buildLightServices', () => {
 
   it('reads On from isLightOn, not the force-enable flag', () => {
     // A light on via motion has isLightForceEnabled false but isLightOn true.
-    const device = { ...byName('Driveway Light'), isLightOn: true, isLightForceEnabled: false }
+    const device = {
+      ...byName('Driveway Light'),
+      isLightOn: true,
+      isLightForceEnabled: false,
+    }
     const { accessory } = setup(device)
     expect(accessory.getServiceById(S.Lightbulb, 'light')!.valueOf_(C.On)).toBe(true)
   })

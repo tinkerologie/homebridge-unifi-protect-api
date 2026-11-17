@@ -55,7 +55,9 @@ export class RequestQueue {
         lastError = error
         if (!isRetryable(error) || attempt === this.maxRetries)
           throw error
-        const serverDelay = error instanceof ProtectRateLimitError ? error.retryAfterMs : undefined
+        const serverDelay = error instanceof ProtectRateLimitError
+          ? error.retryAfterMs
+          : undefined
         await sleep(serverDelay ?? this.baseDelayMs * 2 ** attempt)
       }
     }

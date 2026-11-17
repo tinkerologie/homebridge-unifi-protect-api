@@ -35,10 +35,14 @@ class FakeToast {
 // The ids come from the real index.html rather than a hand-written list: the
 // markup and the module are separate files now, and nothing else would notice
 // an id renamed in one and not the other.
-const PAGE_IDS = [...new Set(
-  [...readFileSync(new URL('../homebridge-ui/public/index.html', import.meta.url), 'utf8')
-    .matchAll(/\bid="([^"]+)"/g)].map(match => match[1] as string),
-)]
+const PAGE_IDS = [
+  ...new Set(
+    [
+      ...readFileSync(new URL('../homebridge-ui/public/index.html', import.meta.url), 'utf8')
+        .matchAll(/\bid="([^"]+)"/g),
+    ].map(match => match[1] as string),
+  ),
+]
 
 function makePage() {
   const root = new FakeElement('body')
@@ -67,8 +71,22 @@ function makePage() {
   }
 }
 
-const CAMERA = { id: 'cam1', name: 'Front Door', type: 'camera', hasSpeaker: true, hasMic: true, hasPackageCamera: true }
-const CHIME = { id: 'chime1', name: 'Ding Dong', type: 'chime', hasSpeaker: false, hasMic: false, hasPackageCamera: false }
+const CAMERA = {
+  id: 'cam1',
+  name: 'Front Door',
+  type: 'camera',
+  hasSpeaker: true,
+  hasMic: true,
+  hasPackageCamera: true,
+}
+const CHIME = {
+  id: 'chime1',
+  name: 'Ding Dong',
+  type: 'chime',
+  hasSpeaker: false,
+  hasMic: false,
+  hasPackageCamera: false,
+}
 
 /** What the server-side `/console-cert` handler answers with. */
 interface CertResult {
@@ -78,7 +96,12 @@ interface CertResult {
   matches: boolean | null
 }
 
-const FIRST_SIGHT: CertResult = { pem: 'PEM', fingerprint: 'AA:BB', trustedFingerprint: null, matches: null }
+const FIRST_SIGHT: CertResult = {
+  pem: 'PEM',
+  fingerprint: 'AA:BB',
+  trustedFingerprint: null,
+  matches: null,
+}
 
 interface HomebridgeOptions {
   /** Rejects the write when it returns a message, otherwise the write lands. */
@@ -107,7 +130,14 @@ function makeHomebridge({ rejectUpdate = () => undefined, rejectSave = () => und
     saved: () => saves,
     /** The config the runtime is holding — what a reload would show. */
     stored: () => updates.at(-1),
-    getPluginConfig: async () => [{ platform: 'UniFiProtect', name: 'UniFi Protect', host: '10.0.0.1', apiKey: 'k' }],
+    getPluginConfig: async () => [
+      {
+        platform: 'UniFiProtect',
+        name: 'UniFi Protect',
+        host: '10.0.0.1',
+        apiKey: 'k',
+      },
+    ],
     updatePluginConfig: async ([next]: [Record<string, unknown>]) => {
       await holdUpdate()
       const failure = rejectUpdate()
@@ -131,7 +161,9 @@ function makeHomebridge({ rejectUpdate = () => undefined, rejectSave = () => und
         return cert
       if (path === '/test-connection')
         return { nvrName: 'Dream Machine', version: '5.0.0' }
-      return { devices: [CAMERA, CHIME] }
+      return {
+        devices: [CAMERA, CHIME],
+      }
     },
     fixScrollHeight: () => {},
   }
@@ -139,7 +171,9 @@ function makeHomebridge({ rejectUpdate = () => undefined, rejectSave = () => und
 
 /** Depth-first walk, so a control can be found wherever the page put it. */
 function findAll(node: FakeElement, match: (el: FakeElement) => boolean): FakeElement[] {
-  const found = match(node) ? [node] : []
+  const found = match(node)
+    ? [node]
+    : []
   for (const child of node.children) {
     if (child instanceof FakeElement)
       found.push(...findAll(child, match))
@@ -177,7 +211,9 @@ describe('the fake toast is as strict as plugin-ui-utils', () => {
     const detached = toast.success
     expect(() => detached('hello')).toThrow()
     expect(() => toast.success('hello')).not.toThrow()
-    expect(toast.messages).toEqual([{ kind: 'success', text: 'hello' }])
+    expect(toast.messages).toEqual([
+      { kind: 'success', text: 'hello' },
+    ])
   })
 })
 
@@ -203,17 +239,25 @@ describe('test connection, end to end', () => {
 
     // Both halves of `report`: the aria-live line and the toast.
     expect(doc.getElementById('status').textContent).toBe('Connected — Dream Machine, Protect 5.0.0')
-    expect(homebridge.toast.messages).toEqual([{ kind: 'success', text: 'Connected — Dream Machine, Protect 5.0.0' }])
+    expect(homebridge.toast.messages).toEqual([
+      { kind: 'success', text: 'Connected — Dream Machine, Protect 5.0.0' },
+    ])
     // And the credentials reached the runtime, with the newly pinned cert.
     expect(homebridge.stored()).toMatchObject({ host: '10.0.0.5', apiKey: 'secret', consoleCert: 'PEM' })
   })
 
   it('reports a failed certificate read through the toast and gives the button back', async () => {
-    const { doc, homebridge } = await start({ rejectRequest: path => path === '/console-cert' ? 'no route to host' : undefined })
+    const { doc, homebridge } = await start({
+      rejectRequest: path => path === '/console-cert'
+        ? 'no route to host'
+        : undefined,
+    })
 
     await doc.getElementById('test').fire('click')
 
-    expect(homebridge.toast.messages).toEqual([{ kind: 'error', text: 'no route to host' }])
+    expect(homebridge.toast.messages).toEqual([
+      { kind: 'error', text: 'no route to host' },
+    ])
     expect(doc.getElementById('status').textContent).toBe('no route to host')
     // The API key never left the page.
     expect(homebridge.requests.map(r => r.path)).toEqual(['/console-cert'])
@@ -231,7 +275,11 @@ describe('test connection, end to end', () => {
     const inFlight = new Promise<void>((resolve) => {
       release = resolve
     })
-    const { doc, homebridge } = await start({ holdRequest: path => path === '/console-cert' ? inFlight : undefined })
+    const { doc, homebridge } = await start({
+      holdRequest: path => path === '/console-cert'
+        ? inFlight
+        : undefined,
+    })
 
     const test = doc.getElementById('test')
     const first = test.fire('click')
@@ -258,7 +306,14 @@ describe('test connection, end to end', () => {
     const detail = doc.getElementById('device-detail')
     expect(findAll(detail, el => el.tagName === 'H5')[0]?.textContent).toBe('Front Door')
     // Capability-driven: the doorbell has a speaker and a package lens.
-    for (const key of ['expose', 'audio', 'talkback', 'hksv', 'packageCamera', 'quality'])
+    for (const key of [
+      'expose',
+      'audio',
+      'talkback',
+      'hksv',
+      'packageCamera',
+      'quality',
+    ])
       expect(() => byId(detail, `cam1-${key}`), key).not.toThrow()
   })
 })
@@ -270,13 +325,17 @@ describe('test connection, end to end', () => {
 describe('a rejected write rolls back', () => {
   it('restores a host-wide field and its control', async () => {
     let fail = true
-    const { doc, homebridge } = await start({ rejectUpdate: () => fail ? 'disk full' : undefined })
+    const { doc, homebridge } = await start({
+      rejectUpdate: () => fail ? 'disk full' : undefined,
+    })
 
     const maxStreams = doc.getElementById('maxStreams')
     maxStreams.value = '4'
     await maxStreams.fire('change')
 
-    expect(homebridge.toast.messages).toEqual([{ kind: 'error', text: 'Could not save config.json: disk full' }])
+    expect(homebridge.toast.messages).toEqual([
+      { kind: 'error', text: 'Could not save config.json: disk full' },
+    ])
     // The control is back on what is on disk, not on the rejected 4.
     expect(maxStreams.value).toBe('')
 
@@ -291,7 +350,9 @@ describe('a rejected write rolls back', () => {
 
   it('restores a per-device toggle and its override', async () => {
     let fail = false
-    const { doc, homebridge } = await start({ rejectUpdate: () => fail ? 'read-only file system' : undefined })
+    const { doc, homebridge } = await start({
+      rejectUpdate: () => fail ? 'read-only file system' : undefined,
+    })
     await doc.getElementById('test').fire('click')
     findAll(doc.getElementById('device-list'), el => el.dataset.id === 'cam1')[0]?.dispatch('click')
 
@@ -315,7 +376,9 @@ describe('a rejected write rolls back', () => {
     const expose = byId(detail, 'cam1-expose')
     expose.checked = false
     await expose.fire('change')
-    expect(homebridge.stored()?.devices).toEqual({ cam1: { expose: false } })
+    expect(homebridge.stored()?.devices).toEqual({
+      cam1: { expose: false },
+    })
   })
 
   it('does not claim a certificate is trusted when storing it failed', async () => {
@@ -323,7 +386,12 @@ describe('a rejected write rolls back', () => {
     // and offers an explicit re-trust button.
     const { doc, homebridge } = await start({
       rejectUpdate: () => 'disk full',
-      cert: { pem: 'NEW-PEM', fingerprint: 'CC:DD', trustedFingerprint: 'AA:BB', matches: false },
+      cert: {
+        pem: 'NEW-PEM',
+        fingerprint: 'CC:DD',
+        trustedFingerprint: 'AA:BB',
+        matches: false,
+      },
     })
     const trust = doc.getElementById('trust')
     await doc.getElementById('test').fire('click')
@@ -344,7 +412,9 @@ describe('a rejected write rolls back', () => {
   // later connection is pinned to it", and discovery ran against credentials
   // the page no longer held.
   it('does not report a connection it could not store', async () => {
-    const { doc, homebridge } = await start({ rejectUpdate: () => 'disk full' })
+    const { doc, homebridge } = await start({
+      rejectUpdate: () => 'disk full',
+    })
     doc.getElementById('host').value = '10.0.0.5'
     doc.getElementById('apiKey').value = 'secret'
 
@@ -372,8 +442,12 @@ describe('a rejected write rolls back', () => {
     const gates: (() => void)[] = []
     let update = 0
     const { doc, homebridge } = await start({
-      holdUpdate: () => gates.length < 2 ? new Promise<void>(resolve => gates.push(resolve)) : undefined,
-      rejectUpdate: () => (++update === 2 ? 'disk full' : undefined),
+      holdUpdate: () => gates.length < 2
+        ? new Promise<void>(resolve => gates.push(resolve))
+        : undefined,
+      rejectUpdate: () => (++update === 2
+        ? 'disk full'
+        : undefined),
     })
 
     const maxStreams = doc.getElementById('maxStreams')
@@ -407,7 +481,9 @@ describe('a rejected write rolls back', () => {
   // debounce — long after `save()` returned `true`. Nothing can roll back by
   // then, so the failure has to be stated rather than swallowed.
   it('says the settings are not on disk when the config.json write fails', async () => {
-    const { doc, homebridge, win } = await start({ rejectSave: () => 'read-only file system' })
+    const { doc, homebridge, win } = await start({
+      rejectSave: () => 'read-only file system',
+    })
     doc.getElementById('ffmpegPath').value = '/usr/bin/ffmpeg'
     await doc.getElementById('ffmpegPath').fire('change')
 
@@ -437,7 +513,9 @@ describe('the switch keeps its accessible name on the live page', () => {
     const hksv = byId(detail, 'cam1-hksv')
     hksv.checked = true
     await hksv.fire('change')
-    expect(homebridge.stored()?.devices).toEqual({ cam1: { hksv: true } })
+    expect(homebridge.stored()?.devices).toEqual({
+      cam1: { hksv: true },
+    })
 
     const wrap = hksv.parent
     if (!wrap)
@@ -577,7 +655,15 @@ describe('discovered device cache', () => {
       updates,
       saved: () => saves,
       stored: () => updates.at(-1),
-      getPluginConfig: async () => [{ platform: 'UniFiProtect', name: 'UniFi Protect', host: '10.0.0.1', apiKey: 'k', discoveredDevices: cachedDevices }],
+      getPluginConfig: async () => [
+        {
+          platform: 'UniFiProtect',
+          name: 'UniFi Protect',
+          host: '10.0.0.1',
+          apiKey: 'k',
+          discoveredDevices: cachedDevices,
+        },
+      ],
       updatePluginConfig: async ([next]: [Record<string, unknown>]) => { updates.push(structuredClone(next)) },
       savePluginConfig: async () => { saves++ },
       request: async (path: string, payload: Record<string, unknown>) => {
@@ -586,7 +672,9 @@ describe('discovered device cache', () => {
           return FIRST_SIGHT
         if (path === '/test-connection')
           return { nvrName: 'Dream Machine', version: '5.0.0' }
-        return { devices: [CAMERA, CHIME] }
+        return {
+          devices: [CAMERA, CHIME],
+        }
       },
       fixScrollHeight: () => {},
     }

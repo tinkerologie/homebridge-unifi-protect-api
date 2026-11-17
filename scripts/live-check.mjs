@@ -11,11 +11,16 @@ import { connect } from 'node:tls'
 import WebSocket from 'ws'
 
 const env = Object.fromEntries(
-  (existsSync('.env') ? readFileSync('.env', 'utf8') : '')
+  (existsSync('.env')
+    ? readFileSync('.env', 'utf8')
+    : '')
     .split('\n')
     .map(line => line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/))
     .filter(Boolean)
-    .map(m => [m[1], m[2].trim()]),
+    .map(m => [
+      m[1],
+      m[2].trim(),
+    ]),
 )
 
 const host = env.PROTECT_HOST ?? process.env.PROTECT_HOST
@@ -46,7 +51,9 @@ const pinned = await new Promise((resolve, reject) => {
     port: Number(url.port || 443),
     // SNI for a DNS name so a console fronting several certs presents the right
     // one; omitted for an IP literal, where SNI is invalid.
-    servername: isIP(url.hostname) ? undefined : url.hostname,
+    servername: isIP(url.hostname)
+      ? undefined
+      : url.hostname,
     rejectUnauthorized: false,
   }, () => {
     const raw = socket.getPeerCertificate().raw
@@ -89,10 +96,17 @@ const pinned = await new Promise((resolve, reject) => {
 // undici dispatcher, and silently ignores an `agent` option.
 function get(url) {
   return new Promise((resolve, reject) => {
-    const req = https.request(url, { headers: { 'X-API-KEY': apiKey }, ...pinned }, (res) => {
+    const req = https.request(url, {
+      headers: { 'X-API-KEY': apiKey },
+      ...pinned,
+    }, (res) => {
       const chunks = []
       res.on('data', c => chunks.push(c))
-      res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'] ?? '', body: Buffer.concat(chunks) }))
+      res.on('end', () => resolve({
+        status: res.statusCode,
+        type: res.headers['content-type'] ?? '',
+        body: Buffer.concat(chunks),
+      }))
     })
     req.setTimeout(15_000, () => req.destroy(new Error('timed out')))
     req.on('error', reject)
@@ -105,7 +119,9 @@ async function check(label, path, validate) {
     const response = await get(`${base}${path}`)
     if (response.status < 200 || response.status >= 300)
       throw new Error(`HTTP ${response.status}`)
-    const body = response.type.includes('json') ? JSON.parse(response.body.toString()) : response.body
+    const body = response.type.includes('json')
+      ? JSON.parse(response.body.toString())
+      : response.body
     validate?.(body)
     console.log(`PASS  ${label}`)
     return body
@@ -174,5 +190,7 @@ for (const channel of ['devices', 'events']) {
   })
 }
 
-console.log(failed ? `\n${failed} check(s) failed.` : '\nAll checks passed.')
+console.log(failed
+  ? `\n${failed} check(s) failed.`
+  : '\nAll checks passed.')
 process.exit(failed ? 1 : 0)

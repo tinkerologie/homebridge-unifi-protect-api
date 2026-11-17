@@ -24,7 +24,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function record(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {}
+  return isRecord(value)
+    ? value
+    : {}
 }
 
 /** A `ledLevel` (1-6) as the nearest HomeKit Brightness percentage. */
@@ -59,8 +61,12 @@ export function isUnderstoodLight(device: Record<string, unknown>): boolean {
  * every discovery.
  */
 function deviceLabel(device: Record<string, unknown>): string {
-  const name = typeof device.name === 'string' ? device.name.trim() : ''
-  return name ? name.slice(0, 48) : 'Light'
+  const name = typeof device.name === 'string'
+    ? device.name.trim()
+    : ''
+  return name
+    ? name.slice(0, 48)
+    : 'Light'
 }
 
 /**
@@ -83,8 +89,12 @@ export function buildLightServices(
   // Only from a payload we understood — see `isUnderstoodLight`.
   if (isUnderstoodLight(device)) {
     info.setCharacteristic(C.Manufacturer, 'Ubiquiti')
-      .setCharacteristic(C.Model, typeof device.modelKey === 'string' ? device.modelKey : 'light')
-      .setCharacteristic(C.SerialNumber, typeof device.mac === 'string' ? device.mac : String(device.id ?? 'unknown'))
+      .setCharacteristic(C.Model, typeof device.modelKey === 'string'
+        ? device.modelKey
+        : 'light')
+      .setCharacteristic(C.SerialNumber, typeof device.mac === 'string'
+        ? device.mac
+        : String(device.id ?? 'unknown'))
   }
 
   let bulb = accessory.getServiceById(S.Lightbulb, 'light')

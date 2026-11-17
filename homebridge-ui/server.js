@@ -8,7 +8,9 @@ import { HomebridgePluginUiServer, RequestError } from '@homebridge/plugin-ui-ut
 const fail = message => new RequestError(message, {})
 
 function baseUrl(host) {
-  const trimmed = typeof host === 'string' ? host.trim() : ''
+  const trimmed = typeof host === 'string'
+    ? host.trim()
+    : ''
   if (!trimmed)
     throw fail('Enter the IP address or hostname of your UniFi console.')
   return `https://${trimmed}/proxy/protect/integration/v1`
@@ -51,7 +53,11 @@ function fingerprintOf(pem) {
 function readConsoleCert(host) {
   const url = new URL(`https://${host}`)
   return new Promise((resolve, reject) => {
-    const socket = connect({ host: url.hostname, port: Number(url.port || 443), rejectUnauthorized: false }, () => {
+    const socket = connect({
+      host: url.hostname,
+      port: Number(url.port || 443),
+      rejectUnauthorized: false,
+    }, () => {
       const raw = socket.getPeerCertificate().raw
       socket.destroy()
       if (!raw?.length) {
@@ -59,7 +65,10 @@ function readConsoleCert(host) {
         return
       }
       const pem = `-----BEGIN CERTIFICATE-----\n${raw.toString('base64').replace(/.{1,64}/g, '$&\n')}-----END CERTIFICATE-----\n`
-      resolve({ pem, fingerprint: fingerprintOf(pem) })
+      resolve({
+        pem,
+        fingerprint: fingerprintOf(pem),
+      })
     })
     socket.setTimeout(15_000, () => socket.destroy(new Error('timed out reading the certificate')))
     socket.on('error', reject)
@@ -80,7 +89,10 @@ function readConsoleCert(host) {
  */
 function httpsFetch(url, { headers, consoleCert } = {}) {
   return new Promise((resolve, reject) => {
-    const req = httpsRequest(url, { headers, ...pinned(consoleCert) }, (res) => {
+    const req = httpsRequest(url, {
+      headers,
+      ...pinned(consoleCert),
+    }, (res) => {
       const chunks = []
       res.on('data', chunk => chunks.push(chunk))
       res.on('end', () => {
@@ -113,7 +125,10 @@ async function get(path, payload, deps) {
   let response
   try {
     // Never log apiKey - it is sent only as the X-API-KEY header value.
-    response = await fetchImpl(url, { headers: { 'X-API-KEY': apiKey ?? '' }, consoleCert })
+    response = await fetchImpl(url, {
+      headers: { 'X-API-KEY': apiKey ?? '' },
+      consoleCert,
+    })
   }
   catch (error) {
     // A certificate error here means the pin rejected the peer during the
@@ -152,14 +167,18 @@ export async function consoleCertRequest(payload = {}, deps) {
     throw fail(`Could not read the certificate of ${host} (${error?.message ?? error}). Check the address, and that the console is on and reachable from Homebridge.`)
   }
 
-  const trustedFingerprint = consoleCert ? fingerprintOf(consoleCert) : null
+  const trustedFingerprint = consoleCert
+    ? fingerprintOf(consoleCert)
+    : null
   return {
     pem: presented.pem,
     fingerprint: presented.fingerprint,
     trustedFingerprint,
     // `null` where nothing is trusted yet - the UI treats that as first use,
     // which is a different thing from a mismatch.
-    matches: trustedFingerprint === null ? null : trustedFingerprint === presented.fingerprint,
+    matches: trustedFingerprint === null
+      ? null
+      : trustedFingerprint === presented.fingerprint,
   }
 }
 

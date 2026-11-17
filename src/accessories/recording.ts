@@ -50,7 +50,10 @@ export class PrebufferRing {
   snapshot(): { init: Buffer, fragments: Buffer[] } | undefined {
     if (!this.init)
       return undefined
-    return { fragments: [...this.fragments], init: this.init }
+    return {
+      fragments: [...this.fragments],
+      init: this.init,
+    }
   }
 
   /** Keeps the init segment — it describes the stream, not a moment in it. */
@@ -137,7 +140,18 @@ export function recordingArgs(caps: FfmpegCapabilities, o: RecordingArgsOptions)
   input.push('-rtsp_transport', 'tcp', '-timeout', String(RTSP_TIMEOUT_US), '-i', o.url)
   return [
     ...input,
-    ...(o.audio ? ['-c:a', 'aac', '-ar', '32000', '-ac', '1', '-b:a', '32k'] : ['-an']),
+    ...(o.audio
+      ? [
+          '-c:a',
+          'aac',
+          '-ar',
+          '32000',
+          '-ac',
+          '1',
+          '-b:a',
+          '32k',
+        ]
+      : ['-an']),
     '-c:v',
     caps.encoder,
     '-b:v',
@@ -474,7 +488,9 @@ export class RecordingDelegate implements CameraRecordingDelegate {
     // for it. `unref()` keeps it from holding the process open, so what is at
     // stake is a stray fetch and a retained delegate, not a hang.
     clearTimeout(this.restartTimer)
-    this.failures = (lifetimeMs >= HEALTHY_RUN_MS && producedMedia) ? 0 : this.failures + 1
+    this.failures = (lifetimeMs >= HEALTHY_RUN_MS && producedMedia)
+      ? 0
+      : this.failures + 1
     const slow = this.failures > MAX_RESTARTS
     // Once, on the transition: this is the line that tells a user looking at the
     // log that recording is down and no longer retrying quickly.
@@ -601,7 +617,9 @@ export class RecordingDelegate implements CameraRecordingDelegate {
     // The configuration comes off the wire from a controller, so it is not this
     // plugin's to trust.
     const positive = (value: unknown): number | undefined =>
-      typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+      typeof value === 'number' && Number.isFinite(value) && value > 0
+        ? value
+        : undefined
     const wanted = positive(this.config?.prebufferLength) ?? DEFAULT_FRAGMENT_MS
     const fragmentMs = positive(this.config?.mediaContainerConfiguration.fragmentLength) ?? DEFAULT_FRAGMENT_MS
     // Capped at the ring's own depth: asking for more pre-roll than is held is

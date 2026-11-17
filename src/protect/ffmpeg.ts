@@ -109,7 +109,9 @@ interface ProbeOptions {
 
 export async function probeFfmpeg(options: ProbeOptions): Promise<FfmpegCapabilities> {
   const run = options.run ?? runFfmpeg
-  const paths = options.configuredPath ? [options.configuredPath] : (options.candidates ?? FFMPEG_CANDIDATES)
+  const paths = options.configuredPath
+    ? [options.configuredPath]
+    : (options.candidates ?? FFMPEG_CANDIDATES)
 
   let fallback: FfmpegCapabilities | undefined
   for (const path of paths) {
@@ -231,9 +233,16 @@ const DANGLING_SRTP_FLAG = /-srtp_(?:in|out)_params\s*\S*$/i
 export function splitOnLastToken(text: string, tokenLimit = TOKEN_LIMIT): { complete: string, pending: string } {
   const flag = text.search(DANGLING_SRTP_FLAG)
   const tail = text.search(/\S*$/)
-  const boundary = flag === -1 ? tail : Math.min(flag, tail)
+  const boundary = flag === -1
+    ? tail
+    : Math.min(flag, tail)
   const pending = text.slice(boundary)
-  return { complete: text.slice(0, boundary), pending: pending.length > tokenLimit ? '' : pending }
+  return {
+    complete: text.slice(0, boundary),
+    pending: pending.length > tokenLimit
+      ? ''
+      : pending,
+  }
 }
 
 export type SpawnFn = (command: string, args: string[]) => ChildProcess

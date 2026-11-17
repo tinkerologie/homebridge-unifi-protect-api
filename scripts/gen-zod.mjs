@@ -66,7 +66,13 @@ const HANDLED = new Set([
   'pattern',
 ])
 /** Documentation only — no effect on validation. */
-const IGNORED = new Set(['description', 'title', 'examples', 'example', 'deprecated'])
+const IGNORED = new Set([
+  'description',
+  'title',
+  'examples',
+  'example',
+  'deprecated',
+])
 
 function convert(node, name, isComponent = false) {
   if (!node || typeof node !== 'object')
@@ -93,8 +99,12 @@ function convert(node, name, isComponent = false) {
   if (Array.isArray(node.type)) {
     const nonNull = node.type.filter(t => t !== 'null')
     const bases = nonNull.map(t => convert({ ...node, type: t }, name))
-    const base = bases.length === 1 ? bases[0] : `z.union([${bases.join(', ')}])`
-    return node.type.includes('null') ? `${base}.nullable()` : base
+    const base = bases.length === 1
+      ? bases[0]
+      : `z.union([${bases.join(', ')}])`
+    return node.type.includes('null')
+      ? `${base}.nullable()`
+      : base
   }
 
   if (node.const !== undefined)
@@ -112,7 +122,9 @@ function convert(node, name, isComponent = false) {
   // allOf with a single member is the spec's way of attaching constraints to a $ref.
   if (node.allOf) {
     const parts = node.allOf.map(n => convert(n, name))
-    return parts.length === 1 ? parts[0] : parts.slice(1).reduce((a, b) => `z.intersection(${a}, ${b})`, parts[0])
+    return parts.length === 1
+      ? parts[0]
+      : parts.slice(1).reduce((a, b) => `z.intersection(${a}, ${b})`, parts[0])
   }
 
   if (node.oneOf || node.anyOf) {
@@ -132,7 +144,9 @@ function convert(node, name, isComponent = false) {
 
   switch (node.type) {
     case 'string':
-      return node.format === 'uri' ? 'z.url()' : withStr(node, 'z.string()')
+      return node.format === 'uri'
+        ? 'z.url()'
+        : withStr(node, 'z.string()')
     case 'number':
       return withNum(node, 'z.number()')
     case 'integer':
@@ -146,7 +160,9 @@ function convert(node, name, isComponent = false) {
     case 'object':
       return objectOf(node, name, isComponent)
     default:
-      return node.properties ? objectOf(node, name, isComponent) : 'z.unknown()'
+      return node.properties
+        ? objectOf(node, name, isComponent)
+        : 'z.unknown()'
   }
 }
 
@@ -197,19 +213,27 @@ function objectOf(node, name, isComponent = false) {
   //    a partial variant marks almost nothing required, so an override whose
   //    purpose is relaxing a required field is meaningless there and its
   //    self-policing would fire on the partial, not on real rot.
-  for (const key of isComponent ? (OPTIONAL_OVERRIDES[node.title] ?? []) : []) {
+  for (const key of isComponent
+    ? (OPTIONAL_OVERRIDES[node.title] ?? [])
+    : []) {
     if (!required.delete(key))
       throw new Error(`gen-zod: OPTIONAL_OVERRIDES entry ${node.title ?? name}.${key} is no longer required in the spec — delete the entry.`)
     usedOverrides.add(`${node.title}.${key}`)
   }
   const entries = Object.entries(props).map(([key, value]) => {
-    const optional = required.has(key) ? '' : '.optional()'
+    const optional = required.has(key)
+      ? ''
+      : '.optional()'
     return `  ${JSON.stringify(key)}: ${convert(value, name)}${optional},`
   })
   // Unknown keys are PRESERVED, not stripped. A firmware update that adds a
   // field must not silently drop it, and must never fail validation.
-  const fn = node.additionalProperties === false ? 'z.strictObject' : 'z.looseObject'
-  const body = entries.length ? `${fn}({\n${entries.join('\n')}\n})` : `${fn}({})`
+  const fn = node.additionalProperties === false
+    ? 'z.strictObject'
+    : 'z.looseObject'
+  const body = entries.length
+    ? `${fn}({\n${entries.join('\n')}\n})`
+    : `${fn}({})`
   // A schema whose additionalProperties is itself a schema constrains the values.
   if (node.additionalProperties && typeof node.additionalProperties === 'object') {
     // z.record() has no place for declared properties, so emitting one here
@@ -230,12 +254,17 @@ function objectOf(node, name, isComponent = false) {
  * output is byte-stable across runs.
  */
 function order(names) {
-  const deps = new Map(names.map(n => [n, refsOf(schemas[n])]))
+  const deps = new Map(names.map(n => [
+    n,
+    refsOf(schemas[n]),
+  ]))
   const done = new Set()
   const out = []
   while (out.length < names.length) {
     const ready = names
-      .filter(n => !done.has(n) && [...deps.get(n)].every(d => done.has(d) || !deps.has(d)))
+      .filter(n => !done.has(n) && [
+        ...deps.get(n),
+      ].every(d => done.has(d) || !deps.has(d)))
       .sort()
     if (!ready.length) {
       // A mutual $ref cycle cannot be emitted as plain const declarations: the

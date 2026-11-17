@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restore CI lint compatibility and enforce aggregate validation.
+
+### Fixed
+
 - Test hardware encoders at 720p with a target bitrate before selecting them. Drivers that accept only bitrate-free encoding now fall back to the next encoder or software instead of failing when live view starts.
 
 ### Changed

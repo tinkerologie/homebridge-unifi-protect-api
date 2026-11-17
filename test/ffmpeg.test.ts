@@ -22,7 +22,9 @@ describe('encoderCandidates', () => {
 
   it('offers libx264 alone on the real software-only build', () => {
     const { hwaccels, encoders } = fixture('software')
-    expect(encoderCandidates(hwaccels, encoders)).toEqual([{ encoder: 'libx264' }])
+    expect(encoderCandidates(hwaccels, encoders)).toEqual([
+      { encoder: 'libx264' },
+    ])
   })
 
   it('drops qsv when the build cannot do it at all', () => {
@@ -40,7 +42,9 @@ describe('encoderCandidates', () => {
   it('does not mistake an h264_qsv mentioned in a description for an h264_qsv encoder', () => {
     const encoders = ' V..... hevc_qsv HEVC (Intel Quick Sync) (alternatives: h264_qsv)\n V....D libx264 libx264 H.264\n'
     expect(encoders).toContain('h264_qsv')
-    expect(encoderCandidates('qsv\n', encoders)).toEqual([{ encoder: 'libx264' }])
+    expect(encoderCandidates('qsv\n', encoders)).toEqual([
+      { encoder: 'libx264' },
+    ])
   })
 
   // Synthetic: none of the real fixtures contain an encoder name that is a
@@ -48,28 +52,50 @@ describe('encoderCandidates', () => {
   // boundary in hasEncoder. This one exercises that boundary directly.
   it('does not mistake h264_qsv_backup for h264_qsv (synthetic)', () => {
     expect(encoderCandidates('qsv\n', ' V..... h264_qsv_backup Some experimental variant\n V....D libx264 libx264 H.264\n'))
-      .toEqual([{ encoder: 'libx264' }])
+      .toEqual([
+        { encoder: 'libx264' },
+      ])
   })
 })
 
 describe('probeFfmpeg', () => {
-  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+  const log = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }
 
   it('picks the hardware-capable path even when a software one comes first', async () => {
     const hw = fixture('hardware')
     const sw = fixture('software')
     const run = vi.fn(async (path: string, args: string[]) => {
-      const f = path === '/usr/bin/ffmpeg' ? hw : sw
-      return args.includes('-hwaccels') ? f.hwaccels : f.encoders
+      const f = path === '/usr/bin/ffmpeg'
+        ? hw
+        : sw
+      return args.includes('-hwaccels')
+        ? f.hwaccels
+        : f.encoders
     })
-    const caps = await probeFfmpeg({ log, run, candidates: ['/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'] })
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'],
+    })
     expect(caps).toEqual({ path: '/usr/bin/ffmpeg', encoder: 'h264_qsv', hwaccel: 'qsv' })
   })
 
   it('honours a configured path without probing others', async () => {
     const hw = fixture('hardware')
-    const run = vi.fn(async (_p: string, args: string[]) => args.includes('-hwaccels') ? hw.hwaccels : hw.encoders)
-    const caps = await probeFfmpeg({ log, run, candidates: ['/a', '/b'], configuredPath: '/custom/ffmpeg' })
+    const run = vi.fn(async (_p: string, args: string[]) => args.includes('-hwaccels')
+      ? hw.hwaccels
+      : hw.encoders)
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/a', '/b'],
+      configuredPath: '/custom/ffmpeg',
+    })
     expect(caps.path).toBe('/custom/ffmpeg')
     expect(run).toHaveBeenCalledWith('/custom/ffmpeg', expect.arrayContaining(['-hwaccels']))
     expect(run).not.toHaveBeenCalledWith('/a', expect.anything())
@@ -80,9 +106,15 @@ describe('probeFfmpeg', () => {
     const run = vi.fn(async (path: string, args: string[]) => {
       if (path === '/missing')
         throw new Error('ENOENT')
-      return args.includes('-hwaccels') ? sw.hwaccels : sw.encoders
+      return args.includes('-hwaccels')
+        ? sw.hwaccels
+        : sw.encoders
     })
-    const caps = await probeFfmpeg({ log, run, candidates: ['/missing', '/usr/local/bin/ffmpeg'] })
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/missing', '/usr/local/bin/ffmpeg'],
+    })
     expect(caps).toEqual({ path: '/usr/local/bin/ffmpeg', encoder: 'libx264' })
   })
 
@@ -105,9 +137,15 @@ describe('probeFfmpeg', () => {
         throw new Error('Device creation failed: -1313558101')
       if (args.includes('h264_vaapi'))
         return ''
-      return args.includes('-hwaccels') ? hw.hwaccels : hw.encoders
+      return args.includes('-hwaccels')
+        ? hw.hwaccels
+        : hw.encoders
     })
-    const caps = await probeFfmpeg({ log, run, candidates: ['/usr/bin/ffmpeg'] })
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/usr/bin/ffmpeg'],
+    })
     expect(caps).toEqual({ path: '/usr/bin/ffmpeg', encoder: 'h264_vaapi', hwaccel: 'vaapi' })
   })
 
@@ -116,9 +154,15 @@ describe('probeFfmpeg', () => {
     const run = vi.fn(async (_path: string, args: string[]) => {
       if (args.includes('-c:v'))
         throw new Error('Device creation failed: -22')
-      return args.includes('-hwaccels') ? hw.hwaccels : hw.encoders
+      return args.includes('-hwaccels')
+        ? hw.hwaccels
+        : hw.encoders
     })
-    const caps = await probeFfmpeg({ log, run, candidates: ['/usr/bin/ffmpeg'] })
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/usr/bin/ffmpeg'],
+    })
     expect(caps).toEqual({ path: '/usr/bin/ffmpeg', encoder: 'libx264' })
     // Both were tried, not just the first.
     expect(run.mock.calls.filter(([, args]) => args.includes('h264_qsv'))).toHaveLength(1)
@@ -186,8 +230,14 @@ describe('probeFfmpeg', () => {
   it('stops at the first encoder that works, without trialling the rest', async () => {
     const hw = fixture('hardware')
     const run = vi.fn(async (_path: string, args: string[]) =>
-      args.includes('-hwaccels') ? hw.hwaccels : hw.encoders)
-    const caps = await probeFfmpeg({ log, run, candidates: ['/usr/bin/ffmpeg'] })
+      args.includes('-hwaccels')
+        ? hw.hwaccels
+        : hw.encoders)
+    const caps = await probeFfmpeg({
+      log,
+      run,
+      candidates: ['/usr/bin/ffmpeg'],
+    })
     expect(caps.encoder).toBe('h264_qsv')
     expect(run.mock.calls.filter(([, args]) => args.includes('h264_vaapi'))).toHaveLength(0)
   })
@@ -196,7 +246,11 @@ describe('probeFfmpeg', () => {
     const run = vi.fn(async () => {
       throw new Error('ENOENT')
     })
-    await expect(probeFfmpeg({ log, run, candidates: ['/a'] })).rejects.toThrow(/no usable ffmpeg/i)
+    await expect(probeFfmpeg({
+      log,
+      run,
+      candidates: ['/a'],
+    })).rejects.toThrow(/no usable ffmpeg/i)
   })
 })
 
@@ -207,7 +261,10 @@ function fakeSpawn() {
   const proc = Object.assign(new EventEmitter(), {
     stderr: new EventEmitter(),
     stdout: new EventEmitter(),
-    stdin: Object.assign(new EventEmitter(), { write: vi.fn(), end: vi.fn() }),
+    stdin: Object.assign(new EventEmitter(), {
+      write: vi.fn(),
+      end: vi.fn(),
+    }),
     // Real child.kill() returns true once the signal was actually delivered.
     kill: vi.fn(() => true),
     killed: false,
@@ -335,9 +392,19 @@ describe('an srtp key split across chunk boundaries', () => {
 
   /** Runs one two-chunk split and returns what actually reached the log. */
   function leakThrough(line: string, split: number): string {
-    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+    const log = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    }
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
     proc.stderr.emit('data', Buffer.from(line.slice(0, split)))
     proc.stderr.emit('data', Buffer.from(line.slice(split)))
@@ -370,9 +437,19 @@ describe('an srtp key split across chunk boundaries', () => {
   // Three chunks, so the flag, the key and the terminator each land alone: the
   // middle chunk is a bare key with no context on either side.
   it('never leaks a key that arrives entirely on its own', () => {
-    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+    const log = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    }
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
     proc.stderr.emit('data', Buffer.from('Error: -srtp_out_params '))
     proc.stderr.emit('data', Buffer.from(SENTINEL))
@@ -386,12 +463,22 @@ describe('an srtp key split across chunk boundaries', () => {
 })
 
 describe('ffmpegProcess', () => {
-  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+  const log = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }
 
   it('never lets a stream url reach the log on failure', () => {
     log.warn.mockClear()
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: ['-i', URL], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: ['-i', URL],
+      log,
+      spawn,
+    })
     p.start()
     proc.stderr.emit('data', Buffer.from(`Error opening input ${URL}\n`))
     proc.emit('close', 1)
@@ -410,7 +497,12 @@ describe('ffmpegProcess', () => {
   it('redacts a chunk before truncation, so a scheme cut off by the 4000-char bound cannot leak a token', () => {
     log.warn.mockClear()
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
 
     // Pad past the buffer's 4000-char bound so a naive "append then slice"
@@ -432,7 +524,12 @@ describe('ffmpegProcess', () => {
   it('redacts a url whose scheme and token arrive in separate data events', () => {
     log.warn.mockClear()
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
 
     // Split inside the scheme AND inside the token: two boundaries, one URL.
@@ -456,7 +553,12 @@ describe('ffmpegProcess', () => {
   it('redacts a split url that the process never terminates with whitespace', () => {
     log.warn.mockClear()
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
 
     proc.stderr.emit('data', Buffer.from('opening rtsps://192.0.2.1:7441/live?token='))
@@ -479,7 +581,12 @@ describe('ffmpegProcess', () => {
     log.warn.mockClear()
     const SRTP_SECRET = 'PLANTEDSENTINELKEY=='
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: ['-srtp_out_params', SRTP_SECRET], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: ['-srtp_out_params', SRTP_SECRET],
+      log,
+      spawn,
+    })
     p.start()
     proc.stderr.emit('data', Buffer.from(`-srtp_out_params ${SRTP_SECRET} -f rtp\n`))
     proc.emit('close', 1)
@@ -493,7 +600,12 @@ describe('ffmpegProcess', () => {
 
   it('tracks and releases an active slot', () => {
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
     expect(p.running).toBe(true)
     proc.emit('close', 0)
@@ -502,7 +614,12 @@ describe('ffmpegProcess', () => {
 
   it('stop() is idempotent', () => {
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
     p.stop()
     p.stop()
@@ -511,7 +628,12 @@ describe('ffmpegProcess', () => {
 
   it('start() refuses to spawn a second child on the same instance', () => {
     const { spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
     expect(() => p.start()).toThrow(/start\(\) called twice/)
     expect(spawn).toHaveBeenCalledTimes(1)
@@ -520,7 +642,12 @@ describe('ffmpegProcess', () => {
   it('stop() retries when the kill signal was not actually delivered, and stops retrying once it is', () => {
     const { proc, spawn } = fakeSpawn()
     proc.kill.mockReturnValueOnce(false) // first delivery fails
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
     p.stop() // fails: does not latch `killed`
     p.stop() // retries, succeeds (fakeSpawn's default kill() returns true)
@@ -533,7 +660,12 @@ describe('ffmpegProcess', () => {
   it('stop() reports whether the kill actually landed', () => {
     const { proc, spawn } = fakeSpawn()
     proc.kill.mockReturnValueOnce(false)
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
 
     expect(p.stop()).toBe(false)
@@ -548,7 +680,12 @@ describe('ffmpegProcess', () => {
   // reporting false for it would keep a corpse in the caller's map forever.
   it('stop() reports success for a process that already exited, and for one never started', () => {
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    })
     p.start()
     proc.emit('close', 0)
     proc.kill.mockReturnValue(false)
@@ -556,14 +693,25 @@ describe('ffmpegProcess', () => {
     expect(p.stop()).toBe(true)
     expect(proc.kill).not.toHaveBeenCalled()
 
-    expect(new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn }).stop()).toBe(true)
+    expect(new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    }).stop()).toBe(true)
   })
 
   it('calls onExit exactly once when a failed spawn emits error then close', () => {
     const before = FfmpegProcess.activeCount
     const onExit = vi.fn()
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn, onExit })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+      onExit,
+    })
     p.start()
     proc.emit('error', new Error('ENOENT'))
     proc.emit('close', null)
@@ -575,8 +723,18 @@ describe('ffmpegProcess', () => {
     const before = FfmpegProcess.activeCount
     const { proc: proc1, spawn: spawn1 } = fakeSpawn()
     const { proc: proc2, spawn: spawn2 } = fakeSpawn()
-    const p1 = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn: spawn1 })
-    const p2 = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn: spawn2 })
+    const p1 = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn: spawn1,
+    })
+    const p2 = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn: spawn2,
+    })
 
     p1.start()
     expect(FfmpegProcess.activeCount).toBe(before + 1)
@@ -592,14 +750,25 @@ describe('ffmpegProcess', () => {
 
   it('writes the stdin payload and ends the stream', () => {
     const { proc, spawn } = fakeSpawn()
-    new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn, stdin: 'v=0\r\n' }).start()
+    new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+      stdin: 'v=0\r\n',
+    }).start()
     expect(proc.stdin.write).toHaveBeenCalledExactlyOnceWith('v=0\r\n')
     expect(proc.stdin.end).toHaveBeenCalledOnce()
   })
 
   it('leaves stdin alone when no payload is given', () => {
     const { proc, spawn } = fakeSpawn()
-    new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn }).start()
+    new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    }).start()
     expect(proc.stdin.write).not.toHaveBeenCalled()
     expect(proc.stdin.end).not.toHaveBeenCalled()
   })
@@ -607,7 +776,13 @@ describe('ffmpegProcess', () => {
   it('delivers stdout chunks in order', () => {
     const seen: string[] = []
     const { proc, spawn } = fakeSpawn()
-    new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, onStdout: c => seen.push(c.toString()), spawn }).start()
+    new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      onStdout: c => seen.push(c.toString()),
+      spawn,
+    }).start()
     proc.stdout.emit('data', Buffer.from('a'))
     proc.stdout.emit('data', Buffer.from('b'))
     expect(seen).toEqual(['a', 'b'])
@@ -615,7 +790,12 @@ describe('ffmpegProcess', () => {
 
   it('does not read stdout when no consumer is given', () => {
     const { proc, spawn } = fakeSpawn()
-    new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn }).start()
+    new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+    }).start()
     expect(proc.stdout.listenerCount('data')).toBe(0)
   })
 
@@ -623,14 +803,26 @@ describe('ffmpegProcess', () => {
     const { proc, spawn } = fakeSpawn()
     // @ts-expect-error simulating a ChildProcess whose stdout is null, as Node's types allow
     proc.stdout = undefined
-    expect(() => new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, onStdout: () => {}, spawn }).start()).not.toThrow()
+    expect(() => new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      onStdout: () => {},
+      spawn,
+    }).start()).not.toThrow()
   })
 
   it('does not throw when the child has no stdin stream', () => {
     const { proc, spawn } = fakeSpawn()
     // @ts-expect-error simulating a ChildProcess whose stdin is null, as Node's types allow
     proc.stdin = undefined
-    expect(() => new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn, stdin: 'v=0\r\n' }).start()).not.toThrow()
+    expect(() => new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+      stdin: 'v=0\r\n',
+    }).start()).not.toThrow()
   })
 
   // Node's EventEmitter treats 'error' specially: emitting it with zero
@@ -640,7 +832,13 @@ describe('ffmpegProcess', () => {
   // without the fix, rather than merely checking a listener was registered.
   it('does not crash when child.stdin emits an error (e.g. EPIPE from a dead process)', () => {
     const { proc, spawn } = fakeSpawn()
-    const p = new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn, stdin: 'v=0\r\n' })
+    const p = new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+      stdin: 'v=0\r\n',
+    })
     p.start()
     expect(() => proc.stdin.emit('error', Object.assign(new Error('EPIPE'), { code: 'EPIPE' }))).not.toThrow()
   })
@@ -650,7 +848,13 @@ describe('ffmpegProcess', () => {
   // the whole Homebridge process down.
   it('does not crash when child.stdout emits an error', () => {
     const { proc, spawn } = fakeSpawn()
-    new FfmpegProcess({ path: '/usr/bin/ffmpeg', args: [], log, spawn, onStdout: () => {} }).start()
+    new FfmpegProcess({
+      path: '/usr/bin/ffmpeg',
+      args: [],
+      log,
+      spawn,
+      onStdout: () => {},
+    }).start()
     expect(() => proc.stdout.emit('error', Object.assign(new Error('ECONNRESET'), { code: 'ECONNRESET' }))).not.toThrow()
   })
 })

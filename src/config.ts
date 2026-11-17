@@ -41,7 +41,12 @@ const defaultsSchema = z.object({
    * enable recording on more cameras than the tier allows.
    */
   icloudTier: z.enum(['50gb', '200gb', '2tb']).default('200gb'),
-}).default({ exposeNewDevices: true, quality: 'auto', hksv: false, icloudTier: '200gb' })
+}).default({
+  exposeNewDevices: true,
+  quality: 'auto',
+  hksv: false,
+  icloudTier: '200gb',
+})
 
 export const configSchema = z.object({
   platform: z.string(),
@@ -86,7 +91,16 @@ export const configSchema = z.object({
     hasLedStatus: z.boolean(),
     hasPackageCamera: z.boolean(),
     smartDetectTypes: z.array(z.string()).catch([]),
-  }).catch({ id: '', name: '', type: '', hasSpeaker: false, hasMic: false, hasLedStatus: false, hasPackageCamera: false, smartDetectTypes: [] }))
+  }).catch({
+    id: '',
+    name: '',
+    type: '',
+    hasSpeaker: false,
+    hasMic: false,
+    hasLedStatus: false,
+    hasPackageCamera: false,
+    smartDetectTypes: [],
+  }))
     .transform(arr => arr.filter(d => d.id !== ''))
     .catch([])
     .optional(),
@@ -119,12 +133,16 @@ export function parseConfig(raw: unknown) {
  */
 export function storeConsoleCert(configPath: string, host: string, pem: string): void {
   const raw = JSON.parse(readFileSync(configPath, 'utf8')) as { platforms?: Record<string, unknown>[] }
-  const blocks = Array.isArray(raw.platforms) ? raw.platforms : []
+  const blocks = Array.isArray(raw.platforms)
+    ? raw.platforms
+    : []
   const ours = blocks.filter(block => block?.platform === PLATFORM_NAME)
   // Host-matched first: `singular: true` makes more than one block unusual, but
   // writing the certificate into the wrong console's block would be worse than
   // not writing it at all.
-  const block = ours.find(candidate => candidate.host === host) ?? (ours.length === 1 ? ours[0] : undefined)
+  const block = ours.find(candidate => candidate.host === host) ?? (ours.length === 1
+    ? ours[0]
+    : undefined)
   if (!block)
     throw new Error(`no ${PLATFORM_NAME} platform block for ${host} in ${configPath}`)
   block.consoleCert = pem

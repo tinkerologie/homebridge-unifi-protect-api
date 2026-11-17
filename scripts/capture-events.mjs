@@ -13,7 +13,10 @@ import WebSocket from 'ws'
 const env = Object.fromEntries(
   readFileSync('.env', 'utf8').split('\n')
     .map(l => l.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)).filter(Boolean)
-    .map(m => [m[1], m[2].trim()]),
+    .map(m => [
+      m[1],
+      m[2].trim(),
+    ]),
 )
 const host = env.PROTECT_HOST
 const apiKey = env.PROTECT_API_KEY
@@ -35,7 +38,9 @@ const pinned = await new Promise((resolve, reject) => {
     port: Number(url.port || 443),
     // SNI for a DNS name so a console fronting several certs presents the right
     // one; omitted for an IP literal, where SNI is invalid.
-    servername: isIP(url.hostname) ? undefined : url.hostname,
+    servername: isIP(url.hostname)
+      ? undefined
+      : url.hostname,
     rejectUnauthorized: false,
   }, () => {
     const raw = socket.getPeerCertificate().raw
@@ -87,9 +92,15 @@ for (const channel of ['devices', 'events']) {
     catch {
       return
     }
-    frames.push({ channel, at: Date.now(), payload })
+    frames.push({
+      channel,
+      at: Date.now(),
+      payload,
+    })
     const item = payload.item ?? {}
-    console.error(`[${channel}] ${payload.type} ${item.type ?? item.modelKey ?? ''} ${item.smartDetectTypes ? JSON.stringify(item.smartDetectTypes) : ''}`)
+    console.error(`[${channel}] ${payload.type} ${item.type ?? item.modelKey ?? ''} ${item.smartDetectTypes
+      ? JSON.stringify(item.smartDetectTypes)
+      : ''}`)
   })
 }
 

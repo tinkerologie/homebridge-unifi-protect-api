@@ -30,10 +30,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * audible. Absent or malformed ring settings read as silent.
  */
 export function chimeVolume(device: Record<string, unknown>): number {
-  const rings = Array.isArray(device.ringSettings) ? device.ringSettings : []
+  const rings = Array.isArray(device.ringSettings)
+    ? device.ringSettings
+    : []
   let volume = 0
   for (const ring of rings) {
-    const value = isRecord(ring) ? ring.volume : undefined
+    const value = isRecord(ring)
+      ? ring.volume
+      : undefined
     if (typeof value === 'number' && value > volume)
       volume = value
   }
@@ -55,8 +59,12 @@ export function isUnderstoodChime(device: Record<string, unknown>): boolean {
  * console. Truncate rather than let HAP warn on every discovery.
  */
 function deviceLabel(device: Record<string, unknown>): string {
-  const name = typeof device.name === 'string' ? device.name.trim() : ''
-  return name ? name.slice(0, 48) : 'Chime'
+  const name = typeof device.name === 'string'
+    ? device.name.trim()
+    : ''
+  return name
+    ? name.slice(0, 48)
+    : 'Chime'
 }
 
 /**
@@ -78,8 +86,12 @@ export function buildChimeServices(
   // Only from a payload we understood — see `isUnderstoodChime`.
   if (isUnderstoodChime(device)) {
     info.setCharacteristic(C.Manufacturer, 'Ubiquiti')
-      .setCharacteristic(C.Model, typeof device.modelKey === 'string' ? device.modelKey : 'chime')
-      .setCharacteristic(C.SerialNumber, typeof device.mac === 'string' ? device.mac : String(device.id ?? 'unknown'))
+      .setCharacteristic(C.Model, typeof device.modelKey === 'string'
+        ? device.modelKey
+        : 'chime')
+      .setCharacteristic(C.SerialNumber, typeof device.mac === 'string'
+        ? device.mac
+        : String(device.id ?? 'unknown'))
   }
 
   let bulb = accessory.getServiceById(S.Lightbulb, VOLUME_SUBTYPE)
@@ -122,7 +134,9 @@ function wireVolume(
   on.onSet(async (value) => {
     // Off silences; on restores the last audible level so the toggle is never
     // inert and never forgets where the volume was.
-    const target = value ? lastAudible.get(service) ?? FULL_VOLUME : 0
+    const target = value
+      ? lastAudible.get(service) ?? FULL_VOLUME
+      : 0
     try {
       await apply(target)
     }

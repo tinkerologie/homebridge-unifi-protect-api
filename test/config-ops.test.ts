@@ -138,7 +138,9 @@ export class FakeElement {
       return ''
     if (this.children.length === 0)
       return this._text
-    return this.children.map(c => (c instanceof FakeElement ? c.textContent : c)).join('')
+    return this.children.map(c => (c instanceof FakeElement
+      ? c.textContent
+      : c)).join('')
   }
 
   set className(value: string) {
@@ -255,9 +257,13 @@ export class FakeElement {
     // Raw, deliberately: whatever innerHTML was handed comes back unescaped,
     // which is exactly the regression the injection assertions must catch.
     const inner = this._html ?? this.children
-      .map(child => (child instanceof FakeElement ? child.outerHTML : escape(child)))
+      .map(child => (child instanceof FakeElement
+        ? child.outerHTML
+        : escape(child)))
       .join('')
-    return `<${tag}${attrs.length ? ` ${attrs.join(' ')}` : ''}>${inner}</${tag}>`
+    return `<${tag}${attrs.length
+      ? ` ${attrs.join(' ')}`
+      : ''}>${inner}</${tag}>`
   }
 }
 
@@ -270,10 +276,15 @@ export class FakeElement {
 export function makeDoc() {
   const root = new FakeElement('body')
   root.isDocumentRoot = true
-  return { createElement: (tag: string) => new FakeElement(tag), root }
+  return {
+    createElement: (tag: string) => new FakeElement(tag),
+    root,
+  }
 }
 
-const fakeDocument = { createElement: (tag: string) => new FakeElement(tag) }
+const fakeDocument = {
+  createElement: (tag: string) => new FakeElement(tag),
+}
 
 // The harness itself, where the page depends on the real DOM's behaviour. The
 // tab shell is built with `tabRoot.before(tablist, ...panes)` and then moves
@@ -331,7 +342,12 @@ describe('ensureConfig', () => {
   // from a whitelist unpaired the bridge on every save.
   it('preserves keys it does not know about through a full round-trip', () => {
     const bridge = { username: '0E:11:22:33:44:55', port: 51234, pin: '031-45-154' }
-    const saved = { platform: 'UniFiProtect', host: '10.0.0.1', apiKey: 'k', _bridge: bridge }
+    const saved = {
+      platform: 'UniFiProtect',
+      host: '10.0.0.1',
+      apiKey: 'k',
+      _bridge: bridge,
+    }
 
     const config = setDeviceSetting(ensureConfig(saved), 'cam1', 'expose', false)
 
@@ -344,7 +360,12 @@ describe('ensureConfig', () => {
   // throw away the pinned certificate, and the next start would silently trust
   // whatever answered — the exact failure this plugin refuses to have.
   it('preserves the trusted console certificate through a save', () => {
-    const saved = { platform: 'UniFiProtect', host: '10.0.0.1', apiKey: 'k', consoleCert: 'PEM' }
+    const saved = {
+      platform: 'UniFiProtect',
+      host: '10.0.0.1',
+      apiKey: 'k',
+      consoleCert: 'PEM',
+    }
 
     const config = setDeviceSetting(ensureConfig(saved), 'cam1', 'expose', false)
 
@@ -377,7 +398,16 @@ describe('setDeviceSetting', () => {
 })
 
 describe('setDiscoveredDevices', () => {
-  const DEVICE = { id: 'cam1', name: 'Front Door', type: 'camera', hasSpeaker: true, hasMic: true, hasLedStatus: false, hasPackageCamera: false, smartDetectTypes: [] }
+  const DEVICE = {
+    id: 'cam1',
+    name: 'Front Door',
+    type: 'camera',
+    hasSpeaker: true,
+    hasMic: true,
+    hasLedStatus: false,
+    hasPackageCamera: false,
+    smartDetectTypes: [],
+  }
 
   it('replaces the discoveredDevices field', () => {
     const config = ensureConfig({})
@@ -411,7 +441,12 @@ describe('isOverridden / clearDeviceSetting', () => {
   const base = ensureConfig({})
 
   it('reports override state per key, per device', () => {
-    const config = { ...base, devices: { a: { audio: true } } }
+    const config = {
+      ...base,
+      devices: {
+        a: { audio: true },
+      },
+    }
     expect(isOverridden(config, 'a', 'audio')).toBe(true)
     // Same device, a key it never set — inherited, not overridden.
     expect(isOverridden(config, 'a', 'quality')).toBe(false)
@@ -424,25 +459,45 @@ describe('isOverridden / clearDeviceSetting', () => {
   // survived: a camera deliberately switched off would show "default" and
   // offer no reset.
   it('reports an explicit false as overridden, not as an absent key', () => {
-    const config = { ...base, devices: { a: { audio: false } } }
+    const config = {
+      ...base,
+      devices: {
+        a: { audio: false },
+      },
+    }
     expect(isOverridden(config, 'a', 'audio')).toBe(true)
     // And the absent key next to it still is not.
     expect(isOverridden(config, 'a', 'talkback')).toBe(false)
   })
 
   it('clears one key and keeps the others', () => {
-    const config = { ...base, devices: { a: { audio: true, quality: 'high' } } }
+    const config = {
+      ...base,
+      devices: {
+        a: { audio: true, quality: 'high' },
+      },
+    }
     const next = clearDeviceSetting(config, 'a', 'audio')
     expect(next.devices.a).toEqual({ quality: 'high' })
   })
 
   it('removes the device entry when its last override is cleared', () => {
-    const config = { ...base, devices: { a: { audio: true } } }
+    const config = {
+      ...base,
+      devices: {
+        a: { audio: true },
+      },
+    }
     expect(clearDeviceSetting(config, 'a', 'audio').devices.a).toBeUndefined()
   })
 
   it('is a no-op when the key was never overridden', () => {
-    const config = { ...base, devices: { a: { audio: true } } }
+    const config = {
+      ...base,
+      devices: {
+        a: { audio: true },
+      },
+    }
     const next = clearDeviceSetting(config, 'a', 'quality')
     expect(next).toBe(config)
   })
@@ -453,7 +508,12 @@ describe('isOverridden / clearDeviceSetting', () => {
   })
 
   it('does not mutate the input config', () => {
-    const config = { ...base, devices: { a: { audio: true, quality: 'high' } } }
+    const config = {
+      ...base,
+      devices: {
+        a: { audio: true, quality: 'high' },
+      },
+    }
     clearDeviceSetting(config, 'a', 'audio')
     expect(config.devices.a).toEqual({ audio: true, quality: 'high' })
   })
@@ -487,7 +547,12 @@ describe('the streaming settings the UI now writes', () => {
   // every other test here and then refuse to load at startup.
   it('offers only quality values the plugin schema accepts', () => {
     for (const [value] of QUALITY_OPTIONS) {
-      const parsed = parseConfig({ ...minimal, devices: { cam1: { quality: value } } })
+      const parsed = parseConfig({
+        ...minimal,
+        devices: {
+          cam1: { quality: value },
+        },
+      })
       expect(parsed.success, value).toBe(true)
       expect(parsed.success && settingsFor(parsed.data, 'cam1').quality).toBe(value)
     }
@@ -565,10 +630,18 @@ describe('the global settings the UI now writes', () => {
   // helpers drop is deleted from config.json — including the child bridge's
   // pairing credentials.
   it('preserves every other key, including the child bridge block', () => {
-    const config = ensureConfig({ ...minimal, _bridge: { username: 'AA:BB', port: 1234 }, devices: { cam1: { audio: true } } })
+    const config = ensureConfig({
+      ...minimal,
+      _bridge: { username: 'AA:BB', port: 1234 },
+      devices: {
+        cam1: { audio: true },
+      },
+    })
     const next = setGlobalSetting(config, 'ffmpegPath', '/opt/ffmpeg')
     expect(next._bridge).toEqual({ username: 'AA:BB', port: 1234 })
-    expect(next.devices).toEqual({ cam1: { audio: true } })
+    expect(next.devices).toEqual({
+      cam1: { audio: true },
+    })
   })
 })
 
@@ -615,7 +688,13 @@ describe('renderQualitySelect', () => {
 })
 
 describe('package camera toggle', () => {
-  const doorbell = { id: 'cam1', type: 'camera', hasMic: true, hasSpeaker: true, hasPackageCamera: true }
+  const doorbell = {
+    id: 'cam1',
+    type: 'camera',
+    hasMic: true,
+    hasSpeaker: true,
+    hasPackageCamera: true,
+  }
 
   /**
    * Exactly what index.html's render loop does — `cameraToggles` decides which
@@ -724,7 +803,13 @@ describe('renderDeviceHeader (XSS regression)', () => {
 // inline script (`TOGGLE_SECTION`). It now travels with the toggle itself,
 // where `cameraToggles` already has full test coverage.
 describe('cameraToggles sections', () => {
-  const doorbell = { id: 'cam1', type: 'camera', hasMic: true, hasSpeaker: true, hasPackageCamera: true }
+  const doorbell = {
+    id: 'cam1',
+    type: 'camera',
+    hasMic: true,
+    hasSpeaker: true,
+    hasPackageCamera: true,
+  }
 
   it('files each toggle under the section index.html renders it in', () => {
     const bySection = Object.fromEntries(cameraToggles(doorbell).map(t => [t.key, t.section]))
@@ -802,7 +887,12 @@ describe('icloudTier validation', () => {
     // Cast: a hand-edited config.json is exactly the untyped input this test
     // guards against — `Partial<ConfigShape>` promises a legal tier, real
     // config.json on disk does not.
-    const badConfig = { platform: 'UniFiProtect', host: '10.0.0.1', apiKey: 'k', defaults: { icloudTier: '1tb' } } as unknown as Parameters<typeof ensureConfig>[0]
+    const badConfig = {
+      platform: 'UniFiProtect',
+      host: '10.0.0.1',
+      apiKey: 'k',
+      defaults: { icloudTier: '1tb' },
+    } as unknown as Parameters<typeof ensureConfig>[0]
     const config = ensureConfig(badConfig)
     expect(config.defaults.icloudTier).toBe(DEFAULTS.icloudTier)
     // And the fallback itself is one parseConfig accepts, so the round-trip
@@ -820,15 +910,23 @@ describe('recordingCount / tierWarning', () => {
   const base = ensureConfig({})
   const devices = (ids: string[]) => ids.map(id => ({ id, type: 'camera', hasPackageCamera: true }))
   const withDevices = (deviceConfig: Record<string, DeviceOverride>, tier: IcloudTier = '200gb') =>
-    ({ ...base, defaults: { ...base.defaults, icloudTier: tier }, devices: deviceConfig })
+    ({
+      ...base,
+      defaults: { ...base.defaults, icloudTier: tier },
+      devices: deviceConfig,
+    })
 
   // `attachPackageCamera` builds its CameraController with NO `recording` key,
   // so the package accessory never advertises HKSV and cannot occupy one of
   // Apple's camera slots. This test previously pinned the opposite — a count
   // of 2 — which warned 200 GB users off a sixth camera they were entitled to.
   it('does not count the package lens, which never records', () => {
-    const withLens = withDevices({ a: { hksv: true, packageCamera: true } })
-    const withoutLens = withDevices({ a: { hksv: true } })
+    const withLens = withDevices({
+      a: { hksv: true, packageCamera: true },
+    })
+    const withoutLens = withDevices({
+      a: { hksv: true },
+    })
     expect(recordingCount(withLens, devices(['a']))).toBe(1)
     // Enabling the lens moves nothing: asserted against the same config minus
     // the flag, so a re-introduced double-count fails here rather than being
@@ -840,7 +938,10 @@ describe('recordingCount / tierWarning', () => {
   // carries an hksv override or inherits a true default from
   // `defaults.hksv` — only `device.type === 'camera'` counts.
   it('does not count a non-camera device, override or inherited default', () => {
-    const config = withDevices({ a: { hksv: true }, b: {} })
+    const config = withDevices({
+      a: { hksv: true },
+      b: {},
+    })
     config.defaults.hksv = true
     const mixed = [
       { id: 'a', type: 'light', hasPackageCamera: false },
@@ -851,12 +952,18 @@ describe('recordingCount / tierWarning', () => {
     // Direction check: a lone non-camera with hksv on must count zero. Without
     // this, a flipped `type === 'camera'` comparison above still passes the
     // mixed-list assertion by coincidence (skip the camera, count the light).
-    const lightOnly = withDevices({ a: { hksv: true } })
-    expect(recordingCount(lightOnly, [{ id: 'a', type: 'light', hasPackageCamera: false }])).toBe(0)
+    const lightOnly = withDevices({
+      a: { hksv: true },
+    })
+    expect(recordingCount(lightOnly, [
+      { id: 'a', type: 'light', hasPackageCamera: false },
+    ])).toBe(0)
   })
 
   it('does not count a device that is not recording, lens or no lens', () => {
-    const config = withDevices({ a: { hksv: false, packageCamera: true } })
+    const config = withDevices({
+      a: { hksv: false, packageCamera: true },
+    })
     expect(recordingCount(config, devices(['a']))).toBe(0)
   })
 
@@ -871,18 +978,33 @@ describe('recordingCount / tierWarning', () => {
   // input that tells the two apart, and `||` would fall through to the default
   // and count a camera the user switched off.
   it('lets an explicit false override a true default rather than falling through to it', () => {
-    const config = withDevices({ a: { hksv: false } })
+    const config = withDevices({
+      a: { hksv: false },
+    })
     config.defaults.hksv = true
     expect(recordingCount(config, devices(['a', 'b']))).toBe(1)
   })
 
   it('does not warn at the limit', () => {
-    const config = withDevices({ a: { hksv: true }, b: { hksv: true }, c: { hksv: true }, d: { hksv: true }, e: { hksv: true } })
+    const config = withDevices({
+      a: { hksv: true },
+      b: { hksv: true },
+      c: { hksv: true },
+      d: { hksv: true },
+      e: { hksv: true },
+    })
     expect(tierWarning(config, devices(['a', 'b', 'c', 'd', 'e']))).toBeUndefined()
   })
 
   it('warns above the limit, naming the count and the limit', () => {
-    const config = withDevices({ a: { hksv: true }, b: { hksv: true }, c: { hksv: true }, d: { hksv: true }, e: { hksv: true }, f: { hksv: true } })
+    const config = withDevices({
+      a: { hksv: true },
+      b: { hksv: true },
+      c: { hksv: true },
+      d: { hksv: true },
+      e: { hksv: true },
+      f: { hksv: true },
+    })
     const message = tierWarning(config, devices(['a', 'b', 'c', 'd', 'e', 'f']))
     expect(message).toContain('6')
     expect(message).toContain('5')
@@ -890,7 +1012,10 @@ describe('recordingCount / tierWarning', () => {
 
   it('never warns on the unlimited tier', () => {
     const ids = Array.from({ length: 20 }, (_, i) => String(i))
-    const many = Object.fromEntries(ids.map(id => [id, { hksv: true }]))
+    const many = Object.fromEntries(ids.map(id => [
+      id,
+      { hksv: true },
+    ]))
     expect(tierWarning(withDevices(many, '2tb'), devices(ids))).toBeUndefined()
   })
 
@@ -900,14 +1025,19 @@ describe('recordingCount / tierWarning', () => {
   // tier" permanently — including one recording camera on what should be a
   // silent default. `parseIcloudTier` is what makes the banner honest.
   it('judges an unrecognised tier by the default tier, never by undefined', () => {
-    const unknownTier = { a: { hksv: true } }
+    const unknownTier = {
+      a: { hksv: true },
+    }
     // Cast for the same reason ensureConfig's test does: config.json on disk
     // can hold any string, the type cannot.
     const config = withDevices(unknownTier, '1tb' as unknown as IcloudTier)
     // One camera is inside the 200gb default's limit of 5, so: no warning.
     expect(tierWarning(config, devices(['a']))).toBeUndefined()
 
-    const many = Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f'].map(id => [id, { hksv: true }]))
+    const many = Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f'].map(id => [
+      id,
+      { hksv: true },
+    ]))
     const over = withDevices(many, '1tb' as unknown as IcloudTier)
     const message = tierWarning(over, devices(['a', 'b', 'c', 'd', 'e', 'f']))
     // And when it does warn, it names the tier and limit actually in force —
@@ -922,7 +1052,14 @@ describe('recordingCount / tierWarning', () => {
   })
 
   it('is advisory only — the config it warns about is returned unchanged, never blocked or reverted', () => {
-    const config = withDevices({ a: { hksv: true, packageCamera: true }, b: { hksv: true }, c: { hksv: true }, d: { hksv: true }, e: { hksv: true }, f: { hksv: true } })
+    const config = withDevices({
+      a: { hksv: true, packageCamera: true },
+      b: { hksv: true },
+      c: { hksv: true },
+      d: { hksv: true },
+      e: { hksv: true },
+      f: { hksv: true },
+    })
     expect(tierWarning(config, devices(['a', 'b', 'c', 'd', 'e', 'f']))).toBeDefined()
     expect(config.devices.a?.hksv).toBe(true)
   })

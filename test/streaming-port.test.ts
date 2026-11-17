@@ -42,8 +42,18 @@ function prepareRequest(): PrepareStreamRequest {
     sourceAddress: '192.0.2.20',
     targetAddress: '192.0.2.9',
     addressVersion: 'ipv4',
-    video: { port: 5000, srtpCryptoSuite: 0, srtp_key: Buffer.alloc(16, 1), srtp_salt: Buffer.alloc(14, 2) },
-    audio: { port: 5002, srtpCryptoSuite: 0, srtp_key: Buffer.alloc(16, 3), srtp_salt: Buffer.alloc(14, 4) },
+    video: {
+      port: 5000,
+      srtpCryptoSuite: 0,
+      srtp_key: Buffer.alloc(16, 1),
+      srtp_salt: Buffer.alloc(14, 2),
+    },
+    audio: {
+      port: 5002,
+      srtpCryptoSuite: 0,
+      srtp_key: Buffer.alloc(16, 3),
+      srtp_salt: Buffer.alloc(14, 4),
+    },
   }
 }
 
@@ -52,7 +62,11 @@ describe('prepareStream when a port cannot be reserved', () => {
     const delegate = new StreamingDelegate({
       deviceId: 'cam1',
       label: 'Driveway',
-      log: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+      log: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+      },
       client: {} as never,
       urls: {} as never,
       caps: { path: '/usr/bin/ffmpeg', encoder: 'libx264' },
@@ -82,7 +96,11 @@ describe('prepareStream when a port cannot be reserved', () => {
     const delegate = new StreamingDelegate({
       deviceId: 'cam1',
       label: 'Doorbell',
-      log: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+      log: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+      },
       client: {} as never,
       urls: {} as never,
       caps: { path: '/usr/bin/ffmpeg', encoder: 'libx264' },
