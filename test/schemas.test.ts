@@ -4,6 +4,7 @@ import {
   cameraSchema,
   chimeSchema,
   existingRtspsStreamsSchema,
+  externalArmProfilePatchSchema,
   fobArmControlSettingsSchema,
   fobKeypadSettingsSchema,
   lightSchema,
@@ -11,6 +12,7 @@ import {
   liveviewSchema,
   nvrSchema,
   relayOutputStateSchema,
+  sensorSchema,
 } from '../src/protect/schemas.js'
 
 const load = (n: string) => JSON.parse(readFileSync(`test/fixtures/${n}.json`, 'utf8'))
@@ -30,6 +32,24 @@ describe('generated schemas parse real hardware payloads', () => {
     const nvr = structuredClone(load('nvrs'))
     delete nvr.armMode.armProfileId
     expect(nvrSchema.safeParse(nvr).success).toBe(true)
+  })
+
+  it('accepts 7.3.x sensor and NVR payloads that predate the 7.4.102 fields', () => {
+    // No sensor hardware in the fixture set, so assert the field directly.
+    expect(sensorSchema.shape.isMountedIncorrectly.safeParse(undefined).success).toBe(true)
+    expect(sensorSchema.shape.isMountedIncorrectly.safeParse(true).success).toBe(true)
+    const nvr = structuredClone(load('nvrs'))
+    delete nvr.featureFlags
+    expect(nvrSchema.safeParse(nvr).success).toBe(true)
+    expect(nvrSchema.safeParse({
+      ...nvr,
+      featureFlags: { useExternalAlarmManager: true },
+    }).success).toBe(true)
+  })
+
+  it('enforces minProperties on external arm profile patches', () => {
+    expect(externalArmProfilePatchSchema.safeParse({}).success).toBe(false)
+    expect(externalArmProfilePatchSchema.safeParse({ title: 'Away' }).success).toBe(true)
   })
 
   it('accepts the 7.3.70 fob controls and validates keypad volume bounds', () => {
