@@ -1,19 +1,54 @@
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import { request as httpsRequest } from 'node:https'
+import { isIPv4, isIPv6 } from 'node:net'
 import process from 'node:process'
 import { connect } from 'node:tls'
 import { HomebridgePluginUiServer, RequestError } from '@homebridge/plugin-ui-utils'
 
 const fail = message => new RequestError(message, {})
 
-function baseUrl(host) {
+const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i
+const BRACKETED = /^\[([0-9a-f:.]+)\](?::(\d{1,5}))?$/i
+const PLAIN = /^([^:[\]]+)(?::(\d{1,5}))?$/
+
+/**
+ * The console address as typed, trimmed and checked to be ONLY a host: a
+ * hostname, an IPv4 address or a bracketed IPv6 address, with an optional
+ * port. It is interpolated into a URL that carries the API key, so anything
+ * else - a path, query, fragment, credentials or whitespace - would change
+ * where that request goes (`1.2.3.4/x#` drops the API path entirely).
+ */
+function consoleHost(host) {
   const trimmed = typeof host === 'string'
     ? host.trim()
     : ''
   if (!trimmed)
     throw fail('Enter the IP address or hostname of your UniFi console.')
-  return `https://${trimmed}/proxy/protect/integration/v1`
+  const invalid = () => fail('That is not a valid console address. Enter only the IP address or hostname of your UniFi console (for example 192.168.1.1 or unifi.local), optionally with a port, and no https://, path or slashes. Put an IPv6 address in brackets, like [fd00::1].')
+
+  const bracketed = BRACKETED.exec(trimmed)
+  const plain = bracketed
+    ? null
+    : PLAIN.exec(trimmed)
+  const name = bracketed?.[1] ?? plain?.[1]
+  const port = bracketed?.[2] ?? plain?.[2]
+  if (name === undefined)
+    throw invalid()
+  const validName = bracketed
+    ? isIPv6(name)
+    // An all-numeric name is only ever meant as an IPv4 address - do not let
+    // `999.1.1.1` through as a "hostname".
+    : /^[\d.]+$/.test(name)
+      ? isIPv4(name)
+      : HOSTNAME.test(name)
+  if (!validName || (port !== undefined && !(Number(port) >= 1 && Number(port) <= 65_535)))
+    throw invalid()
+  return trimmed
+}
+
+function baseUrl(host) {
+  return `https://${consoleHost(host)}/proxy/protect/integration/v1`
 }
 
 /**
@@ -112,21 +147,30 @@ function httpsFetch(url, { headers, consoleCert } = {}) {
 }
 
 async function get(path, payload, deps) {
-  const { host, apiKey, consoleCert } = payload
-  // Resolved before the network attempt, so a missing host fails without
-  // ever touching fetchImpl.
+  const { apiKey, consoleCert } = payload
+  // Resolved before the network attempt, so a missing or malformed host fails
+  // without ever touching fetchImpl. Every message below interpolates this
+  // validated value, never the raw input.
+  const host = consoleHost(payload.host)
   const url = `${baseUrl(host)}${path}`
   const fetchImpl = deps?.fetchImpl ?? httpsFetch
   // Fail closed: the request below carries the API key, so it is not made at
   // all until the browser has trusted a certificate for this console.
-  if (!consoleCert)
+  if (typeof consoleCert !== 'string' || !consoleCert)
     throw fail('The console\'s certificate has not been trusted yet. Press Test Connection to check it first.')
+  // Checked here rather than left to node's header validation, whose error
+  // would surface as "could not reach". The key itself is never echoed.
+  if (typeof apiKey !== 'string' || !apiKey)
+    throw fail('Enter the API key from UniFi Site Manager → Integrations.')
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F\u007F]/.test(apiKey))
+    throw fail('That API key contains invalid characters. Paste it again from UniFi Site Manager → Integrations.')
 
   let response
   try {
     // Never log apiKey - it is sent only as the X-API-KEY header value.
     response = await fetchImpl(url, {
-      headers: { 'X-API-KEY': apiKey ?? '' },
+      headers: { 'X-API-KEY': apiKey },
       consoleCert,
     })
   }
@@ -145,7 +189,35 @@ async function get(path, payload, deps) {
     throw fail(`${host} responded, but the Protect Integration API is not there. Check that UniFi Protect is installed and up to date.`)
   if (!response.ok)
     throw fail(`The console returned ${response.status}. Try again shortly.`)
-  return response.json()
+  try {
+    return await response.json()
+  }
+  catch {
+    throw unexpected(path)
+  }
+}
+
+/** For a console that answered with something other than what the API documents - often one mid-reboot. */
+function unexpected(path) {
+  return fail(`The console sent an unexpected response for ${path}. It may still be starting up - try again shortly.`)
+}
+
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function getRecord(path, payload, deps) {
+  const body = await get(path, payload, deps)
+  if (!isRecord(body))
+    throw unexpected(path)
+  return body
+}
+
+async function getList(path, payload, deps) {
+  const body = await get(path, payload, deps)
+  if (!Array.isArray(body))
+    throw unexpected(path)
+  return body.filter(isRecord)
 }
 
 /**
@@ -154,20 +226,19 @@ async function get(path, payload, deps) {
  * API key, so a mismatch is caught with the credential still unsent.
  */
 export async function consoleCertRequest(payload = {}, deps) {
-  const { host, consoleCert } = payload
-  if (!(typeof host === 'string' && host.trim()))
-    throw fail('Enter the IP address or hostname of your UniFi console.')
+  const { consoleCert } = payload
+  const host = consoleHost(payload.host)
   const read = deps?.readCert ?? readConsoleCert
 
   let presented
   try {
-    presented = await read(host.trim())
+    presented = await read(host)
   }
   catch (error) {
     throw fail(`Could not read the certificate of ${host} (${error?.message ?? error}). Check the address, and that the console is on and reachable from Homebridge.`)
   }
 
-  const trustedFingerprint = consoleCert
+  const trustedFingerprint = typeof consoleCert === 'string' && consoleCert
     ? fingerprintOf(consoleCert)
     : null
   return {
@@ -183,17 +254,24 @@ export async function consoleCertRequest(payload = {}, deps) {
 }
 
 export async function testConnectionRequest(payload = {}, deps) {
-  const info = await get('/meta/info', payload, deps)
+  const info = await getRecord('/meta/info', payload, deps)
   const nvr = await get('/nvrs', payload, deps)
-  return { version: info.applicationVersion, nvrName: nvr?.name ?? 'UniFi Protect' }
+  return {
+    version: typeof info.applicationVersion === 'string'
+      ? info.applicationVersion
+      : 'unknown',
+    nvrName: isRecord(nvr) && typeof nvr.name === 'string'
+      ? nvr.name
+      : 'UniFi Protect',
+  }
 }
 
 export async function discoverRequest(payload = {}, deps) {
   const [cameras, lights, sensors, chimes] = await Promise.all([
-    get('/cameras', payload, deps),
-    get('/lights', payload, deps),
-    get('/sensors', payload, deps),
-    get('/chimes', payload, deps),
+    getList('/cameras', payload, deps),
+    getList('/lights', payload, deps),
+    getList('/sensors', payload, deps),
+    getList('/chimes', payload, deps),
   ])
 
   const slim = (device, type) => ({
