@@ -1,6 +1,7 @@
 import type { API, Logging, PlatformAccessory, Service } from 'homebridge'
 import { setImmediate } from 'node:timers'
 import { errorMessage } from '../protect/errors.js'
+import { writeFailure } from './write-failure.js'
 
 /**
  * The write a chime volume control makes back to the console. `volume` is the
@@ -21,10 +22,19 @@ const FULL_VOLUME = 100
 // the audible level here so a muted console echo cannot reset it to full volume.
 const lastAudible = new WeakMap<Service, number>()
 
+/**
+ * HAP gives a set handler 9 s; a write has 7 s once it reaches the console
+ * (WRITE_POLICY in client.ts). A write that waited longer than the difference
+ * behind a slow one cannot answer in time, so it fails fast instead.
+ */
+const QUEUED_WRITE_BUDGET_MS = 2_000
+
 /** On and Brightness writes collected within one tick, settled by one update. */
 interface PendingWrite {
   on?: boolean
   brightness?: number
+  /** `performance.now()` when the first write in the batch arrived. */
+  createdAt: number
   waiters: { resolve: () => void, reject: (error: unknown) => void }[]
 }
 
@@ -33,8 +43,56 @@ interface PendingWrite {
 const pendingWrites = new WeakMap<Service, PendingWrite>()
 
 // Writes for one chime are sent one at a time, in order, so the console
-// always ends on the newest write. This is the tail of that chain.
-const writeChain = new WeakMap<Service, Promise<void>>()
+// always ends on the newest write. While one is in flight, every write that
+// arrives is merged into a single queued batch: only the newest intent needs
+// to reach the console.
+const inFlight = new WeakSet<Service>()
+const queuedWrite = new WeakMap<Service, PendingWrite>()
+
+// The flush of the current wiring. A rebuild replaces it, and a queued batch
+// must run through the newest one.
+const flushers = new WeakMap<Service, (batch: PendingWrite) => Promise<void>>()
+
+/** Folds a later batch into an earlier one: the later intent wins. */
+function merge(into: PendingWrite, from: PendingWrite): void {
+  // A later volume is a request to hear the chime at that volume, so it
+  // cancels an earlier Off. A same-tick Off and volume stay in one batch.
+  if (from.brightness !== undefined && from.on === undefined)
+    delete into.on
+  if (from.on !== undefined)
+    into.on = from.on
+  if (from.brightness !== undefined)
+    into.brightness = from.brightness
+  into.waiters.push(...from.waiters)
+}
+
+async function runWrites(service: Service, batch: PendingWrite): Promise<void> {
+  inFlight.add(service)
+  try {
+    await flushers.get(service)!(batch)
+  }
+  finally {
+    inFlight.delete(service)
+  }
+  const next = queuedWrite.get(service)
+  if (next) {
+    queuedWrite.delete(service)
+    await runWrites(service, next)
+  }
+}
+
+function submitWrite(service: Service, batch: PendingWrite): void {
+  if (!inFlight.has(service)) {
+    // runWrites never rejects: each flush settles its own handlers.
+    void runWrites(service, batch)
+    return
+  }
+  const queued = queuedWrite.get(service)
+  if (queued)
+    merge(queued, batch)
+  else
+    queuedWrite.set(service, batch)
+}
 
 // The volume the tile must show: the latest console update, or the latest
 // write the console accepted after it. HAP commits the client's written value
@@ -141,14 +199,32 @@ function wireVolume(
   // Positive console updates replace the remembered level; a muted echo keeps
   // it. Reads at handler call time also survive replacement of these closures.
   const volume = chimeVolume(device)
-  consoleRevision.set(service, (consoleRevision.get(service) ?? 0) + 1)
-  shownVolume.set(service, volume)
+  // Only a CHANGED volume is news. An unrelated device update, or a discovery
+  // that read the console before a write landed, repeats the old volume and
+  // must not make an in-flight write look superseded.
+  if (shownVolume.get(service) !== volume) {
+    consoleRevision.set(service, (consoleRevision.get(service) ?? 0) + 1)
+    shownVolume.set(service, volume)
+  }
   if (volume > 0)
     lastAudible.set(service, volume)
   service.updateCharacteristic(C.On, volume > 0)
   service.updateCharacteristic(C.Brightness, volume)
 
+  const fail = (batch: PendingWrite) => {
+    // Both characteristics, because a coalesced batch may have written both.
+    writeFailure(api, service.getCharacteristic(C.On))
+    const failure = writeFailure(api, service.getCharacteristic(C.Brightness))
+    for (const waiter of batch.waiters)
+      waiter.reject(failure)
+  }
+
   const flush = async (batch: PendingWrite): Promise<void> => {
+    if (performance.now() - batch.createdAt > QUEUED_WRITE_BUDGET_MS) {
+      log.warn(`Could not change the volume on "${label}": an earlier change was still in progress.`)
+      fail(batch)
+      return
+    }
     // Off always silences. Otherwise an explicit brightness wins; a bare On
     // restores the last audible level so the toggle is never inert and never
     // forgets where the volume was.
@@ -163,9 +239,7 @@ function wireVolume(
       // errorMessage, never the error object: it carries request context that
       // util.inspect has printed the API key from before.
       log.warn(`Could not change the volume on "${label}": ${errorMessage(error)}`)
-      const failure = new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
-      for (const waiter of batch.waiters)
-        waiter.reject(failure)
+      fail(batch)
       return
     }
     // A console update that arrived while this write was in flight is newer
@@ -186,6 +260,7 @@ function wireVolume(
       service.updateCharacteristic(C.Brightness, shown)
     })
   }
+  flushers.set(service, flush)
 
   // HomeKit writes On and Brightness together when a slider is dragged on an
   // off tile. Applied separately they raced - the On restore (last audible or
@@ -193,14 +268,15 @@ function wireVolume(
   // folded into a single volume update that settles both handlers.
   const write = async (change: Pick<PendingWrite, 'on' | 'brightness'>): Promise<void> => {
     const existing = pendingWrites.get(service)
-    const batch: PendingWrite = existing ?? { waiters: [] }
+    const batch: PendingWrite = existing ?? {
+      createdAt: performance.now(),
+      waiters: [],
+    }
     if (!existing) {
       pendingWrites.set(service, batch)
       setImmediate(() => {
         pendingWrites.delete(service)
-        // flush never rejects: a failure settles the batch's own handlers.
-        const next = (writeChain.get(service) ?? Promise.resolve()).then(async () => flush(batch))
-        writeChain.set(service, next)
+        submitWrite(service, batch)
       })
     }
     Object.assign(batch, change)

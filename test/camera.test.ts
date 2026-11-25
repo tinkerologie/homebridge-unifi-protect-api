@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { inspect } from 'node:util'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { applyChange, buildCameraServices, clearTrackedSensors, desiredSubtypes } from '../src/accessories/camera.js'
-import { C, FakeAccessory, FakeHapStatusError, hap, S } from './fake-hap.js'
+import { C, FakeAccessory, FakeHapStatusError, hap, hapSet, S } from './fake-hap.js'
 
 const cameras = JSON.parse(readFileSync('test/fixtures/cameras.json', 'utf8'))
 const byName = (n: string) => cameras.find((c: { name: string }) => c.name === n)
@@ -449,5 +449,20 @@ describe('clearTrackedSensors', () => {
     expect(led.valueOf_(C.On)).toBe(true)
     // A stateless ring has nothing to clear, and writing it would fire a press.
     expect(ring.valueOf_(C.ProgrammableSwitchEvent)).toBeUndefined()
+  })
+})
+
+describe('a failed status LED write', () => {
+  // HAP stores the failed write's status and returns it on every later read.
+  it('does not leave the switch stuck on No Response', async () => {
+    const { accessory } = setup(byName('Garage'), vi.fn(async () => {
+      throw new Error('console rejected it')
+    }))
+    const led = accessory.getServiceById(S.Switch, 'led')!.getCharacteristic(C.On)
+
+    expect(await hapSet(led, false)).toBe(-70402)
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(led.statusCode).toBe(0)
   })
 })

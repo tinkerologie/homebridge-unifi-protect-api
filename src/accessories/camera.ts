@@ -1,6 +1,7 @@
 import type { API, Logging, PlatformAccessory, Service } from 'homebridge'
 import type { SensorChange } from './tracker.js'
 import { errorMessage } from '../protect/errors.js'
+import { writeFailure } from './write-failure.js'
 
 /** Labels shown in Home.app, one per stable subtype. */
 export const SUBTYPE_LABELS: Record<string, string> = {
@@ -238,7 +239,7 @@ function wireLed(
       // write succeeded and HAP then commits the new value, so reverting the
       // characteristic in here would simply be overwritten. Throwing is what
       // makes HomeKit put the switch back.
-      throw new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
+      throw writeFailure(api, characteristic)
     }
   })
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildChimeServices, chimeVolume, isUnderstoodChime } from '../src/accessories/chime.js'
-import { C, FakeAccessory, FakeHapStatusError, hap, S } from './fake-hap.js'
+import { C, FakeAccessory, FakeHapStatusError, hap, hapSet, S } from './fake-hap.js'
 
 const chimes = JSON.parse(readFileSync('test/fixtures/chimes.json', 'utf8'))
 const dingDong = chimes[0]
@@ -337,6 +337,110 @@ describe('buildChimeServices', () => {
     await new Promise(resolve => setImmediate(resolve))
 
     expect(bulb.valueOf_(C.Brightness)).toBe(45)
+  })
+
+  it('does not leave the tile stuck on No Response after a failed write', async () => {
+    const { accessory } = setup(dingDong, {
+      setVolume: async () => {
+        throw new Error('console rejected it')
+      },
+    })
+    const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+
+    expect(await hapSet(brightness, 30)).toBe(-70402)
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(brightness.statusCode).toBe(0)
+    expect(brightness.value).toBe(80)
+  })
+
+  // An unrelated device update (or a discovery that read the console before
+  // the write landed) repeats the old volume. It is not news, and must not
+  // undo a write the console then accepts.
+  it('keeps a successful write when an update repeating the old volume lands mid-write', async () => {
+    let release!: () => void
+    const { accessory, build } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    })
+    const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const write = hapSet(brightness, 30)
+    await tick()
+    build(dingDong)
+    release()
+    await write
+    await tick()
+
+    expect(brightness.value).toBe(30)
+  })
+
+  // Dragging the slider while the console is slow writes many values. Only
+  // the newest needs to reach the console, after the one already in flight.
+  it('collapses writes that arrive during an in-flight write into one', async () => {
+    const releases: (() => void)[] = []
+    const { accessory, setVolume } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const writes = [
+      hapSet(brightness, 10),
+    ]
+    await tick()
+    for (const value of [20, 30, 40]) {
+      writes.push(hapSet(brightness, value))
+      await tick()
+    }
+    // A later Off, then a later volume: the newest intent is the volume.
+    writes.push(hapSet(bulb.getCharacteristic(C.On), false))
+    await tick()
+    writes.push(hapSet(brightness, 55))
+    await tick()
+    releases[0]!()
+    await tick()
+    releases[1]!()
+    expect(await Promise.all(writes)).toEqual([0, 0, 0, 0, 0, 0])
+
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([10, 55])
+  })
+
+  // HAP gives a set handler 9 s. A write that has already waited behind a slow
+  // one cannot finish inside that with its own 7 s budget, so it fails fast
+  // instead of reaching the console after HomeKit gave up on it.
+  it('fails a queued write fast once it has waited past what HAP allows', async () => {
+    let now = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      let release!: () => void
+      const { accessory, setVolume } = setup(dingDong, {
+        setVolume: () => new Promise<void>((resolve) => {
+          release = resolve
+        }),
+      })
+      const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+      const tick = () => new Promise(resolve => setImmediate(resolve))
+
+      const first = hapSet(brightness, 10)
+      await tick()
+      const queued = hapSet(brightness, 70)
+      await tick()
+      now = 2_500
+      release()
+
+      expect(await first).toBe(0)
+      expect(await queued).toBe(-70402)
+      expect(setVolume).toHaveBeenCalledTimes(1)
+    }
+    finally {
+      clock.mockRestore()
+    }
   })
 
   it('rejects both coalesced writes when the single update fails', async () => {
