@@ -33,9 +33,8 @@ const QUEUED_WRITE_BUDGET_MS = 2_000
 interface PendingWrite {
   on?: boolean
   brightness?: number
-  /** `performance.now()` when the first write in the batch arrived. */
-  createdAt: number
-  waiters: { resolve: () => void, reject: (error: unknown) => void }[]
+  /** One per set handler; `createdAt` is `performance.now()` when it was called. */
+  waiters: { createdAt: number, resolve: () => void, reject: (error: unknown) => void }[]
 }
 
 // Keyed by service for the same reason as `lastAudible`: a rebuild replaces
@@ -55,14 +54,27 @@ const flushers = new WeakMap<Service, (batch: PendingWrite) => Promise<void>>()
 
 /** Folds a later batch into an earlier one: the later intent wins. */
 function merge(into: PendingWrite, from: PendingWrite): void {
-  // A later volume is a request to hear the chime at that volume, so it
-  // cancels an earlier Off. A same-tick Off and volume stay in one batch.
-  if (from.brightness !== undefined && from.on === undefined)
-    delete into.on
-  if (from.on !== undefined)
-    into.on = from.on
-  if (from.brightness !== undefined)
+  if (from.on === false) {
+    // Off silences, whatever volume was queued before it.
+    into.on = false
+    delete into.brightness
+  }
+  else if (from.brightness !== undefined) {
+    // A later volume is a request to hear the chime at that volume, so it
+    // cancels an earlier Off. A same-tick Off and volume stay in one batch.
+    if (from.on === undefined)
+      delete into.on
+    else
+      into.on = from.on
     into.brightness = from.brightness
+  }
+  else if (from.on === true) {
+    // A bare On after Off or 0 % means "turn it back on": restore the last
+    // audible level, not the queued silence. After a real volume, keep it.
+    if (into.on === false || into.brightness === 0)
+      delete into.brightness
+    into.on = true
+  }
   into.waiters.push(...from.waiters)
 }
 
@@ -211,19 +223,26 @@ function wireVolume(
   service.updateCharacteristic(C.On, volume > 0)
   service.updateCharacteristic(C.Brightness, volume)
 
-  const fail = (batch: PendingWrite) => {
+  const fail = (waiters: PendingWrite['waiters']) => {
     // Both characteristics, because a coalesced batch may have written both.
     writeFailure(api, service.getCharacteristic(C.On))
     const failure = writeFailure(api, service.getCharacteristic(C.Brightness))
-    for (const waiter of batch.waiters)
+    for (const waiter of waiters)
       waiter.reject(failure)
   }
 
   const flush = async (batch: PendingWrite): Promise<void> => {
-    if (performance.now() - batch.createdAt > QUEUED_WRITE_BUDGET_MS) {
+    // Per change: a step that has waited too long fails on its own, and does
+    // not take a newer change merged into the same batch down with it. The
+    // target already holds the newest intent.
+    const now = performance.now()
+    const expired = batch.waiters.filter(waiter => now - waiter.createdAt > QUEUED_WRITE_BUDGET_MS)
+    if (expired.length) {
       log.warn(`Could not change the volume on "${label}": an earlier change was still in progress.`)
-      fail(batch)
-      return
+      fail(expired)
+      batch.waiters = batch.waiters.filter(waiter => !expired.includes(waiter))
+      if (!batch.waiters.length)
+        return
     }
     // Off always silences. Otherwise an explicit brightness wins; a bare On
     // restores the last audible level so the toggle is never inert and never
@@ -239,7 +258,7 @@ function wireVolume(
       // errorMessage, never the error object: it carries request context that
       // util.inspect has printed the API key from before.
       log.warn(`Could not change the volume on "${label}": ${errorMessage(error)}`)
-      fail(batch)
+      fail(batch.waiters)
       return
     }
     // A console update that arrived while this write was in flight is newer
@@ -268,10 +287,7 @@ function wireVolume(
   // folded into a single volume update that settles both handlers.
   const write = async (change: Pick<PendingWrite, 'on' | 'brightness'>): Promise<void> => {
     const existing = pendingWrites.get(service)
-    const batch: PendingWrite = existing ?? {
-      createdAt: performance.now(),
-      waiters: [],
-    }
+    const batch: PendingWrite = existing ?? { waiters: [] }
     if (!existing) {
       pendingWrites.set(service, batch)
       setImmediate(() => {
@@ -281,7 +297,11 @@ function wireVolume(
     }
     Object.assign(batch, change)
     return new Promise((resolve, reject) => {
-      batch.waiters.push({ resolve, reject })
+      batch.waiters.push({
+        createdAt: performance.now(),
+        resolve,
+        reject,
+      })
     })
   }
 

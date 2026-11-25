@@ -411,6 +411,83 @@ describe('buildChimeServices', () => {
     expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([10, 55])
   })
 
+  // Off (or 0 %) then a bare On, both queued behind a slow write: the On means
+  // "turn it back on", which restores the last audible level, not the 0.
+  it.each([
+    [
+      'Brightness 0',
+      false,
+    ],
+    [
+      'Off',
+      true,
+    ],
+  ])('restores the last audible level when %s is followed by a bare On in the queue', async (_name, viaOff) => {
+    const releases: (() => void)[] = []
+    const { accessory, setVolume } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const writes = [
+      hapSet(bulb.getCharacteristic(C.Brightness), 50),
+    ]
+    await tick()
+    writes.push(viaOff
+      ? hapSet(bulb.getCharacteristic(C.On), false)
+      : hapSet(bulb.getCharacteristic(C.Brightness), 0))
+    await tick()
+    writes.push(hapSet(bulb.getCharacteristic(C.On), true))
+    await tick()
+    releases[0]!()
+    await tick()
+    releases[1]!()
+    await Promise.all(writes)
+
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([50, 50])
+  })
+
+  // The budget is per change: an old intermediate step that has run out of
+  // time must not take a fresh change down with it.
+  it('still sends a fresh change merged into a queued change that ran out of time', async () => {
+    let now = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      const releases: (() => void)[] = []
+      const { accessory, setVolume } = setup(dingDong, {
+        setVolume: () => new Promise<void>((resolve) => {
+          releases.push(resolve)
+        }),
+      })
+      const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+      const tick = () => new Promise(resolve => setImmediate(resolve))
+
+      const first = hapSet(brightness, 10)
+      await tick()
+      now = 100
+      const stale = hapSet(brightness, 20)
+      await tick()
+      now = 2_200
+      const fresh = hapSet(brightness, 70)
+      await tick()
+      now = 2_500
+      releases[0]!()
+      await tick()
+      releases[1]!()
+
+      expect(await first).toBe(0)
+      expect(await stale).toBe(-70402)
+      expect(await fresh).toBe(0)
+      expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([10, 70])
+    }
+    finally {
+      clock.mockRestore()
+    }
+  })
+
   // HAP gives a set handler 9 s. A write that has already waited behind a slow
   // one cannot finish inside that with its own 7 s budget, so it fails fast
   // instead of reaching the console after HomeKit gave up on it.
