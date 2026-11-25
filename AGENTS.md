@@ -7,7 +7,7 @@
 | Key | Value |
 | --- | --- |
 | **Name** | Homebridge UniFi Protect API Plugin |
-| **Repository** | `github.com/ruaan-deysel/homebridge-unifi-protect-api` |
+| **Repository** | `github.com/tinkerologie/homebridge-unifi-protect-api` |
 | **Default Branch** | `main` |
 | **Description** | Homebridge plugin providing UniFi Protect camera and sensor bridging to HomeKit. |
 
