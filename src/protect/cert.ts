@@ -70,7 +70,8 @@ export function fetchConsoleCert(host: string, timeoutMs = 10_000): Promise<Cons
   const url = new URL(`https://${host}`)
   return new Promise((resolve, reject) => {
     const socket = connect({
-      host: url.hostname,
+      // WHATWG keeps IPv6 brackets in `hostname`; the resolver needs them gone.
+      host: url.hostname.replace(/^\[(.*)\]$/, '$1'),
       port: Number(url.port || 443),
       rejectUnauthorized: false,
     }, () => {

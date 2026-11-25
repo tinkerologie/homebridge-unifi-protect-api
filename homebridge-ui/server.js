@@ -89,7 +89,8 @@ function readConsoleCert(host) {
   const url = new URL(`https://${host}`)
   return new Promise((resolve, reject) => {
     const socket = connect({
-      host: url.hostname,
+      // WHATWG keeps IPv6 brackets in `hostname`; the resolver needs them gone.
+      host: url.hostname.replace(/^\[(.*)\]$/, '$1'),
       port: Number(url.port || 443),
       rejectUnauthorized: false,
     }, () => {
@@ -162,8 +163,10 @@ async function get(path, payload, deps) {
   // would surface as "could not reach". The key itself is never echoed.
   if (typeof apiKey !== 'string' || !apiKey)
     throw fail('Enter the API key from UniFi Site Manager → Integrations.')
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001F\u007F]/.test(apiKey))
+  // Printable ASCII only. Control characters could inject a header, and
+  // anything past Latin-1 (a zero-width space or a dash pasted from a notes
+  // app) makes node throw ERR_INVALID_CHAR, reported as "could not reach".
+  if (/[^\u0020-\u007E]/.test(apiKey))
     throw fail('That API key contains invalid characters. Paste it again from UniFi Site Manager → Integrations.')
 
   let response

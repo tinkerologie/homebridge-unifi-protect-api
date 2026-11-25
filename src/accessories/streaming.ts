@@ -771,9 +771,11 @@ export class StreamingDelegate implements CameraStreamingDelegate {
           if (this.stopping.has(proc))
             return
           // Died on its own (RTSP drop, GPU error, OOM): HomeKit still thinks
-          // the stream is live. forceStopStreamingSession ends it on the
-          // controller and calls back into stopSession for the rest.
+          // the stream is live. HAP's forceStopStreamingSession only resets
+          // its own stream management and never calls the delegate back, so
+          // the talkback encoder and the held socket are freed here first.
           this.options.log.warn(`Live view for "${this.options.label}" ended unexpectedly.`)
+          this.stopSession(sessionId)
           this.controller?.forceStopStreamingSession(sessionId)
         },
       })

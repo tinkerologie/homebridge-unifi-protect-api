@@ -251,6 +251,18 @@ describe('credential validation', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['a zero-width space', 'secret\u200Bkey'],
+    ['an em dash', 'secret\u2014key'],
+  ])('rejects an api key with %s as an invalid key, not an unreachable console', async (_name, apiKey) => {
+    const fetchImpl = vi.fn()
+    const error = await testConnectionRequest({ ...creds, apiKey }, { fetchImpl: fetchImpl as never })
+      .catch((e: Error) => e)
+    expect(String((error as Error).message)).toMatch(/api key/i)
+    expect(String((error as Error).message)).not.toContain('secret')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it('rejects a trusted certificate that is not a string', async () => {
     const fetchImpl = vi.fn()
     await expect(testConnectionRequest({ ...creds, consoleCert: 42 as never }, { fetchImpl: fetchImpl as never }))

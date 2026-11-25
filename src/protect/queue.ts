@@ -61,7 +61,13 @@ export class RequestQueue {
     const maxRetries = Math.min(this.maxRetries, policy.maxRetries ?? Number.POSITIVE_INFINITY)
     const retryable = policy.retryable ?? isRetryable
 
+    let lastError: unknown
     for (let attempt = 0; ; attempt++) {
+      // Timer slack can end a backoff at or past the deadline. A request with
+      // no time left must not reach the wire, free slot or not: for a PATCH
+      // that would be a duplicate write HomeKit has already abandoned.
+      if (attempt > 0 && remaining() === 0)
+        throw lastError
       await this.acquire(remaining())
       let error: unknown
       try {
@@ -73,6 +79,7 @@ export class RequestQueue {
       finally {
         this.release()
       }
+      lastError = error
       if (!retryable(error) || attempt >= maxRetries)
         throw error
       const serverDelay = error instanceof ProtectRateLimitError
@@ -89,6 +96,9 @@ export class RequestQueue {
 
   /** Resolves with a slot, or rejects once `withinMs` passes without one. */
   private async acquire(withinMs: number | undefined): Promise<void> {
+    // Checked before the free-slot path: a spent deadline gets no slot at all.
+    if (withinMs !== undefined && withinMs <= 0)
+      throw new ProtectUnavailableError('Timed out waiting for the console: the request deadline passed before it could be sent.')
     if (this.active < this.concurrency) {
       this.active++
       return

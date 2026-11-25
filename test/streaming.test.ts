@@ -1417,6 +1417,23 @@ describe('talkback', () => {
     expect(socket.send.mock.calls.length).toBe(forwarded)
   })
 
+  // HAP's forceStopStreamingSession only resets its own stream management; it
+  // never calls the delegate back. The delegate must free the talkback encoder
+  // and the held socket itself when the video ffmpeg dies on its own.
+  it('kills the encoder and closes the socket when the video ffmpeg dies on its own', async () => {
+    const { spawn, socket, children, procs, delegate, sessionId } = await startTalkbackSession()
+    const controller = {
+      forceStopStreamingSession: vi.fn(),
+    }
+    delegate.attachController(controller)
+    socket.emit('message', rtp(1))
+    await until(() => spawn.mock.calls.length === 2)
+    procs[0]!.emit('close', 1)
+    expect(children[1]!.killed).toBe(true)
+    expect(socket.close).toHaveBeenCalled()
+    expect(controller.forceStopStreamingSession).toHaveBeenCalledWith(sessionId)
+  })
+
   it('kills the encoder and closes the socket on stopAll', async () => {
     const { spawn, socket, children, delegate } = await startTalkbackSession()
     socket.emit('message', rtp(1))

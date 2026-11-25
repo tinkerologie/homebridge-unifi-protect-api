@@ -401,14 +401,58 @@ describe('protectClient request budgets', () => {
     expect(http.mock.calls[0]![1]!.timeoutMs).toBe(15_000)
   })
 
-  it('bounds a write well inside the window HomeKit waits for a set handler', async () => {
-    const { client, http } = retryingHarness(async () => jsonResponse(fixture('cameras')[0]))
-
-    await client.patchLight('light1', { isLightForceEnabled: true })
-
-    // HAP abandons a set handler after 9 s; the write must fail first, with
-    // time left for the handler to turn it into a HapStatusError.
-    expect(http.mock.calls[0]![1]!.timeoutMs).toBeLessThanOrEqual(7000)
+  it.each([
+    [
+      'patchCamera',
+      (c: ProtectClient) => c.patchCamera('cam1', {
+        ledSettings: { isEnabled: false },
+      }),
+    ],
+    [
+      'patchLight',
+      (c: ProtectClient) => c.patchLight('light1', { isLightForceEnabled: true }),
+    ],
+    [
+      'patchChime',
+      (c: ProtectClient) => c.patchChime('chime1', { volume: 30 }),
+    ],
+  ])('%s fails inside the window HomeKit waits for a set handler, retries included', async (_name, write) => {
+    // HAP abandons a set handler after 9 s; the whole write — every attempt and
+    // backoff — must fail first, with time left to become a HapStatusError.
+    vi.useFakeTimers({
+      toFake: [
+        'setTimeout',
+        'clearTimeout',
+        'performance',
+        'Date',
+      ],
+    })
+    try {
+      // A console that never answers: each attempt runs to its full timeout.
+      const http = vi.fn<HttpRequestFn>((_url, options) => new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('Request timed out')), options!.timeoutMs)
+      }))
+      const client = new ProtectClient({
+        host: '192.168.1.1',
+        apiKey: API_KEY,
+        httpRequest: http,
+        consoleCert: 'TRUSTED-PEM',
+        queue: { maxRetries: 3, baseDelayMs: 500 },
+      })
+      const started = performance.now()
+      let settledAt: number | undefined
+      const outcome = write(client).catch((error: unknown) => {
+        settledAt = performance.now()
+        return error
+      })
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(await outcome).toBeInstanceOf(ProtectUnavailableError)
+      expect(settledAt! - started).toBeLessThanOrEqual(7000)
+      expect(http.mock.calls[0]![1]!.timeoutMs).toBeLessThanOrEqual(5000)
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each([

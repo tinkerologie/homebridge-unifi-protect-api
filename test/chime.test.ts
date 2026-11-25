@@ -222,6 +222,44 @@ describe('buildChimeServices', () => {
     ])
   })
 
+  // Real HAP stores the value the client wrote AFTER the set handler resolves,
+  // which overwrites any correction made inside the handler. The tile must
+  // still end on what the chime actually does.
+  it.each([
+    [
+      'On with Brightness 0',
+      true,
+      0,
+      false,
+      0,
+    ],
+    [
+      'Off with Brightness 60',
+      false,
+      60,
+      false,
+      0,
+    ],
+  ])('shows the real state after HAP commits %s', async (_name, onValue, brightnessValue, expectOn, expectBrightness) => {
+    const { accessory } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const on = bulb.getCharacteristic(C.On)
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const hapWrite = async (characteristic: typeof on, value: unknown) => {
+      await characteristic.setHandler!(value)
+      characteristic.value = value
+    }
+
+    await Promise.all([
+      hapWrite(on, onValue),
+      hapWrite(brightness, brightnessValue),
+    ])
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(on.value).toBe(expectOn)
+    expect(brightness.value).toBe(expectBrightness)
+  })
+
   it('rejects both coalesced writes when the single update fails', async () => {
     const setVolume = vi.fn(async () => {
       throw new Error('console rejected it')

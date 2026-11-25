@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { closeSync, fchmodSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
+import { closeSync, fchmodSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import process from 'node:process'
 import { z } from 'zod'
@@ -57,7 +57,10 @@ export const configSchema = z.object({
   host: z.string({ error: 'host is required — the IP or hostname of your UniFi console' })
     .min(1, 'host is required — the IP or hostname of your UniFi console'),
   apiKey: z.string({ error: 'apiKey is required — create one in UniFi Site Manager → Integrations' })
-    .min(1, 'apiKey is required — create one in UniFi Site Manager → Integrations'),
+    .min(1, 'apiKey is required — create one in UniFi Site Manager → Integrations')
+    // Sent as a header value. Anything outside printable ASCII fails there as a
+    // misleading network error, so report it here as the config error it is.
+    .regex(/^[\u0020-\u007E]+$/, 'apiKey contains invalid characters — paste it again from UniFi Site Manager → Integrations'),
   defaults: defaultsSchema,
   /**
    * PEM of the console certificate this install trusts, written on first
@@ -161,21 +164,28 @@ export function storeConsoleCert(configPath: string, host: string, pem: string):
  * deliberately private config.json stays private.
  */
 function writeFileAtomic(path: string, data: string): void {
-  const { mode } = statSync(path)
-  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`)
+  // Through any symlink: Docker and NAS setups often link config.json to a
+  // mounted volume, and renaming over the link would replace it with a file.
+  const target = realpathSync(path)
+  // Permission bits only. Copying setuid/setgid/sticky can make fchmod fail
+  // with EPERM for a non-root Homebridge user.
+  const mode = statSync(target).mode & 0o777
+  const temp = join(dirname(target), `.${basename(target)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`)
   try {
     // `wx`: never follow or reuse something already at the temp name.
-    const fd = openSync(temp, 'wx', mode & 0o7777)
+    const fd = openSync(temp, 'wx', mode)
     try {
       // openSync's mode is filtered through the umask; set it exactly.
-      fchmodSync(fd, mode & 0o7777)
-      writeSync(fd, data)
+      fchmodSync(fd, mode)
+      // writeFileSync loops until every byte is written; a single writeSync
+      // may write only part of the data on some filesystems.
+      writeFileSync(fd, data)
       fsyncSync(fd)
     }
     finally {
       closeSync(fd)
     }
-    renameSync(temp, path)
+    renameSync(temp, target)
   }
   catch (error) {
     rmSync(temp, { force: true })

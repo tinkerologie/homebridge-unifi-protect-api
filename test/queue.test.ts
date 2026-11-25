@@ -135,6 +135,45 @@ describe('requestQueue', () => {
 
     expect(order).toEqual([1, 2, 3, 4, 5])
   })
+  // Timer slack can wake a backoff at or after the deadline. A free slot must
+  // not then dispatch a request with no time left — for a PATCH, a duplicate
+  // write HomeKit has already given up on.
+  it('never dispatches an attempt once the deadline has passed, even with a free slot', async () => {
+    const queue = new RequestQueue()
+    const task = vi.fn(async () => 'sent')
+    await expect(queue.run(task, { deadlineMs: 0 })).rejects.toBeInstanceOf(ProtectUnavailableError)
+    expect(task).not.toHaveBeenCalled()
+    // The slot was never taken, so the queue still has its full capacity.
+    await expect(queue.run(async () => 'ok')).resolves.toBe('ok')
+  })
+
+  it('does not retry when the backoff ends at the deadline', async () => {
+    let now = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      const queue = new RequestQueue({ baseDelayMs: 5 })
+      let calls = 0
+      const pending = queue.run(async () => {
+        calls++
+        // Fails with just over one backoff left (6 ms > 5 ms)...
+        now = 4
+        // ...then the clock passes the deadline during the backoff: the timer
+        // slack the guard exists for.
+        setTimeout(() => {
+          now = 20
+        }, 0)
+        throw new ProtectUnavailableError('slow')
+      }, { deadlineMs: 10 }).catch(error => error)
+      await vi.advanceTimersByTimeAsync(50)
+      const result = await pending
+      expect(result).toBeInstanceOf(ProtectUnavailableError)
+      expect(calls).toBe(1)
+    }
+    finally {
+      clock.mockRestore()
+    }
+  })
+
   it('caps retries per request below the queue default', async () => {
     const queue = new RequestQueue({ concurrency: 1, maxRetries: 3, baseDelayMs: 10 })
     let attempts = 0

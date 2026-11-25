@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -26,6 +26,11 @@ const minimal = {
 }
 
 describe('parseConfig', () => {
+  it('rejects an api key with characters that cannot be sent in a header', () => {
+    const result = parseConfig({ ...minimal, apiKey: 'secret\u200Bkey' })
+    expect(result.success).toBe(false)
+  })
+
   it('rejects a config with no host', () => {
     const result = parseConfig({ platform: 'UniFiProtect', apiKey: 'k' })
     expect(result.success).toBe(false)
@@ -460,6 +465,25 @@ describe('storeConsoleCert', () => {
     expect(after.mode & 0o777).toBe(0o666)
     expect(readdirSync(dirname(path))).toEqual(['config.json'])
     expect(read(path).platforms[0].consoleCert).toBe('PEM')
+  })
+
+  // Docker and NAS setups often symlink config.json to a mounted volume. The
+  // rename must replace the file the link points at, never the link itself.
+  it('updates the target of a symlinked config.json and keeps the link', () => {
+    const root = mkdtempSync(join(tmpdir(), 'protect-config-link-'))
+    mkdirSync(join(root, 'volume'))
+    const target = join(root, 'volume', 'config.json')
+    writeFileSync(target, JSON.stringify({
+      platforms: [minimal],
+    }))
+    const link = join(root, 'config.json')
+    symlinkSync(target, link)
+
+    storeConsoleCert(link, '10.0.0.1', 'PEM')
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(read(target).platforms[0].consoleCert).toBe('PEM')
+    expect(readdirSync(join(root, 'volume'))).toEqual(['config.json'])
   })
 
   it('leaves the original untouched and cleans up when the replace fails', () => {

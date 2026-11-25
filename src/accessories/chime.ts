@@ -162,6 +162,15 @@ function wireVolume(
     }
     for (const waiter of batch.waiters)
       waiter.resolve()
+    // HAP stores the value the client wrote only AFTER a set handler resolves,
+    // overwriting the update apply() made. Correct the tile once HAP has
+    // committed, unless a newer write is already queued and will do it.
+    setImmediate(() => {
+      if (pendingWrites.has(service))
+        return
+      service.updateCharacteristic(C.On, target > 0)
+      service.updateCharacteristic(C.Brightness, target)
+    })
   }
 
   // HomeKit writes On and Brightness together when a slider is dragged on an

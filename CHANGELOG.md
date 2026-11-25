@@ -31,13 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - If a different talkback session is open on the doorbell, the plugin writes one log message: "talkback busy". The plugin does not retry (#65).
 - When you drag the chime volume slider from off, the chime goes to the volume that you set. Before, the volume sometimes went to 100% (#68).
 - If the console refuses a WebSocket subscription, the plugin closes the connection immediately and connects again without delay. After an API key error, the plugin does not connect again (#69).
-- If FFmpeg stops unexpectedly during live view, the plugin tells HomeKit to stop the stream. Before, the Home app showed a frozen image (#70).
-- The plugin writes `config.json` to a temporary file and then renames it. A crash during the write does not damage `config.json` (#71).
+- If FFmpeg stops unexpectedly during live view, the plugin tells HomeKit to stop the stream. It also stops the talkback encoder and closes the audio socket. Before, the Home app showed a frozen image (#70).
+- The plugin and the settings UI can read the certificate from a console with an IPv6 address in brackets, for example `[fd00::1]`. Before, the connection failed with `ENOTFOUND` (#72).
+- The plugin writes `config.json` to a temporary file and then renames it. A crash during the write does not damage `config.json`. If `config.json` is a symbolic link, the plugin updates the file that the link points to (#71).
+- After a request deadline ends, the plugin does not send the request again (#67).
 
 ### Security
 
 - The settings server examines the console address before it sends a request. It refuses an address with a path, query, fragment, credentials or spaces (#72).
-- The settings server refuses an API key with control characters. Error messages do not show the API key (#72).
+- The settings server and the plugin accept only printable ASCII characters in the API key. Before, a pasted zero-width space or dash caused an unclear network error. Error messages do not show the API key (#72).
 - The settings server gives a clear error when the console sends a response with an incorrect shape. Before, it gave an unclear error (#72).
 
 ### Changed
