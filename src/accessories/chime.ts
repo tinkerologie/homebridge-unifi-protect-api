@@ -25,8 +25,6 @@ const lastAudible = new WeakMap<Service, number>()
 interface PendingWrite {
   on?: boolean
   brightness?: number
-  /** The service generation this batch was created at. See `generation`. */
-  generation: number
   waiters: { resolve: () => void, reject: (error: unknown) => void }[]
 }
 
@@ -34,15 +32,18 @@ interface PendingWrite {
 // the onSet closures, and a write already in flight must still coalesce.
 const pendingWrites = new WeakMap<Service, PendingWrite>()
 
-// Bumped by every new write batch and every console update. Writes run
-// concurrently and can finish out of order, so a batch only touches the tile
-// (or the remembered level) while it is still the newest thing that happened.
-const generation = new WeakMap<Service, number>()
-function nextGeneration(service: Service): number {
-  const next = (generation.get(service) ?? 0) + 1
-  generation.set(service, next)
-  return next
-}
+// Writes for one chime are sent one at a time, in order, so the console
+// always ends on the newest write. This is the tail of that chain.
+const writeChain = new WeakMap<Service, Promise<void>>()
+
+// The volume the tile must show: the latest console update, or the latest
+// write the console accepted after it. HAP commits the client's written value
+// AFTER a set handler resolves, so every write ends by putting this back.
+const shownVolume = new WeakMap<Service, number>()
+
+// Bumped by every console update, so a write that was in flight when one
+// arrived does not replace the newer console value.
+const consoleRevision = new WeakMap<Service, number>()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -140,13 +141,12 @@ function wireVolume(
   // Positive console updates replace the remembered level; a muted echo keeps
   // it. Reads at handler call time also survive replacement of these closures.
   const volume = chimeVolume(device)
-  nextGeneration(service)
+  consoleRevision.set(service, (consoleRevision.get(service) ?? 0) + 1)
+  shownVolume.set(service, volume)
   if (volume > 0)
     lastAudible.set(service, volume)
   service.updateCharacteristic(C.On, volume > 0)
   service.updateCharacteristic(C.Brightness, volume)
-
-  const isCurrent = (batch: PendingWrite) => generation.get(service) === batch.generation
 
   const flush = async (batch: PendingWrite): Promise<void> => {
     // Off always silences. Otherwise an explicit brightness wins; a bare On
@@ -155,6 +155,7 @@ function wireVolume(
     const target = batch.on === false
       ? 0
       : batch.brightness ?? lastAudible.get(service) ?? FULL_VOLUME
+    const revision = consoleRevision.get(service)
     try {
       await callbacks.setVolume(String(device.id), target)
     }
@@ -167,18 +168,22 @@ function wireVolume(
         waiter.reject(failure)
       return
     }
-    if (target > 0 && isCurrent(batch))
-      lastAudible.set(service, target)
+    // A console update that arrived while this write was in flight is newer
+    // than the write, so it keeps the tile and the remembered level.
+    if (consoleRevision.get(service) === revision) {
+      shownVolume.set(service, target)
+      if (target > 0)
+        lastAudible.set(service, target)
+    }
     for (const waiter of batch.waiters)
       waiter.resolve()
-    // HAP stores the value the client wrote only AFTER a set handler resolves,
-    // so a correction made before that is lost. Correct the tile once HAP has
-    // committed, unless a newer write or a console update has happened since.
+    // Runs after HAP has committed the client's values, and always puts the
+    // newest known volume back: HAP may have just overwritten it.
     setImmediate(() => {
-      if (!isCurrent(batch))
-        return
-      service.updateCharacteristic(C.On, target > 0)
-      service.updateCharacteristic(C.Brightness, target)
+      // Always set: wireVolume records the console volume before any handler exists.
+      const shown = shownVolume.get(service)!
+      service.updateCharacteristic(C.On, shown > 0)
+      service.updateCharacteristic(C.Brightness, shown)
     })
   }
 
@@ -188,15 +193,14 @@ function wireVolume(
   // folded into a single volume update that settles both handlers.
   const write = async (change: Pick<PendingWrite, 'on' | 'brightness'>): Promise<void> => {
     const existing = pendingWrites.get(service)
-    const batch: PendingWrite = existing ?? {
-      generation: nextGeneration(service),
-      waiters: [],
-    }
+    const batch: PendingWrite = existing ?? { waiters: [] }
     if (!existing) {
       pendingWrites.set(service, batch)
       setImmediate(() => {
         pendingWrites.delete(service)
-        void flush(batch)
+        // flush never rejects: a failure settles the batch's own handlers.
+        const next = (writeChain.get(service) ?? Promise.resolve()).then(async () => flush(batch))
+        writeChain.set(service, next)
       })
     }
     Object.assign(batch, change)

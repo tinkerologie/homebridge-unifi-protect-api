@@ -68,7 +68,16 @@ export class RequestQueue {
       // that would be a duplicate write HomeKit has already abandoned.
       if (attempt > 0 && remaining() === 0)
         throw lastError
-      await this.acquire(remaining())
+      try {
+        await this.acquire(remaining())
+      }
+      catch (timedOut) {
+        // A retry that runs out of time in the line still failed because of
+        // its first error; the caller needs that, not a generic queue timeout.
+        throw attempt > 0
+          ? lastError
+          : timedOut
+      }
       let error: unknown
       try {
         // Checked again with the slot in hand: a waiter can be handed a slot

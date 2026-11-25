@@ -245,6 +245,33 @@ describe('requestQueue', () => {
     }
   })
 
+  it('reports the real failure when a retry times out waiting for a slot', async () => {
+    const queue = new RequestQueue({ concurrency: 1, baseDelayMs: 5 })
+    const original = new ProtectUnavailableError('first attempt failed')
+    let calls = 0
+    const outcome = queue.run(async () => {
+      calls++
+      throw original
+    }, { deadlineMs: 100 }).catch(error => error)
+    // While the failed request backs off, another one takes the only slot and
+    // keeps it past the deadline.
+    let release!: () => void
+    let started!: () => void
+    const holding = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const holder = queue.run(() => new Promise<void>((resolve) => {
+      release = resolve
+      started()
+    }))
+    await holding
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await outcome).toBe(original)
+    expect(calls).toBe(1)
+    release()
+    await holder
+  })
+
   it('caps retries per request below the queue default', async () => {
     const queue = new RequestQueue({ concurrency: 1, maxRetries: 3, baseDelayMs: 10 })
     let attempts = 0

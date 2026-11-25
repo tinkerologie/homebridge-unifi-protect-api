@@ -279,15 +279,48 @@ describe('buildChimeServices', () => {
     await tick()
     const newer = brightness.setHandler!(70) as Promise<void>
     await tick()
-    releases[1]!()
-    await newer
-    brightness.value = 70
+    // Writes are sent one at a time, so the newer one waits for the older.
+    expect(releases).toHaveLength(1)
     releases[0]!()
     await older
     brightness.value = 10
     await tick()
+    expect(releases).toHaveLength(2)
+    releases[1]!()
+    await newer
+    brightness.value = 70
+    await tick()
 
     expect(bulb.valueOf_(C.Brightness)).toBe(70)
+  })
+
+  // A console update can land while a write is still in flight. When that
+  // write's handler then resolves, HAP commits the client's value over it.
+  it('restores a console update that landed while a write was in flight', async () => {
+    let release!: () => void
+    const { accessory, build } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const write = brightness.setHandler!(30) as Promise<void>
+    await tick()
+    build({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 45, repeatTimes: 1 },
+      ],
+    })
+    release()
+    await write
+    brightness.value = 30
+    await tick()
+
+    expect(bulb.valueOf_(C.Brightness)).toBe(45)
   })
 
   it('keeps a console update that lands between a write and its tile correction', async () => {
