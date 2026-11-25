@@ -171,6 +171,77 @@ describe('buildChimeServices', () => {
     expect(log.warn).toHaveBeenCalled()
   })
 
+  // HomeKit writes On and Brightness together when a slider is dragged on an off
+  // tile. Two PATCHes raced and the On restore (100) could win over the 30.
+  it('coalesces an On and Brightness write in the same tick into one volume update', async () => {
+    const silent = {
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 0, repeatTimes: 1 },
+      ],
+    }
+    const { accessory, setVolume } = setup(silent)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await Promise.all([
+      bulb.getCharacteristic(C.On).setHandler!(true),
+      bulb.getCharacteristic(C.Brightness).setHandler!(30),
+    ])
+
+    expect(setVolume).toHaveBeenCalledTimes(1)
+    expect(setVolume).toHaveBeenCalledWith(dingDong.id, 30)
+    expect(bulb.valueOf_(C.On)).toBe(true)
+    expect(bulb.valueOf_(C.Brightness)).toBe(30)
+  })
+
+  it('coalesces in either order', async () => {
+    const { accessory, setVolume } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await Promise.all([
+      bulb.getCharacteristic(C.Brightness).setHandler!(25),
+      bulb.getCharacteristic(C.On).setHandler!(true),
+    ])
+
+    expect(setVolume.mock.calls).toEqual([
+      [dingDong.id, 25],
+    ])
+  })
+
+  it('lets an Off in the same tick as a Brightness write silence the chime', async () => {
+    const { accessory, setVolume } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await Promise.all([
+      bulb.getCharacteristic(C.On).setHandler!(false),
+      bulb.getCharacteristic(C.Brightness).setHandler!(60),
+    ])
+
+    expect(setVolume.mock.calls).toEqual([
+      [dingDong.id, 0],
+    ])
+  })
+
+  it('rejects both coalesced writes when the single update fails', async () => {
+    const setVolume = vi.fn(async () => {
+      throw new Error('console rejected it')
+    })
+    const { accessory } = setup(dingDong, { setVolume })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    const results = await Promise.allSettled([
+      bulb.getCharacteristic(C.On).setHandler!(true),
+      bulb.getCharacteristic(C.Brightness).setHandler!(30),
+    ])
+
+    expect(setVolume).toHaveBeenCalledTimes(1)
+    for (const result of results) {
+      expect(result.status).toBe('rejected')
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(FakeHapStatusError)
+    }
+    expect(log.warn).toHaveBeenCalledTimes(1)
+  })
+
   it('writes no SerialNumber from a degraded payload', () => {
     const { accessory } = setup({ id: dingDong.id, name: 'Ding Dong' })
     expect(accessory.getServiceById(S.Lightbulb, 'chime-volume')).toBeDefined()

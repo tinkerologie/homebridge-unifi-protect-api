@@ -1,4 +1,5 @@
 import type { API, Logging, PlatformAccessory, Service } from 'homebridge'
+import { setImmediate } from 'node:timers'
 import { errorMessage } from '../protect/errors.js'
 
 /**
@@ -19,6 +20,17 @@ const FULL_VOLUME = 100
 // Services survive reconciliation; their onSet closures are replaced. Remember
 // the audible level here so a muted console echo cannot reset it to full volume.
 const lastAudible = new WeakMap<Service, number>()
+
+/** On and Brightness writes collected within one tick, settled by one update. */
+interface PendingWrite {
+  on?: boolean
+  brightness?: number
+  waiters: { resolve: () => void, reject: (error: unknown) => void }[]
+}
+
+// Keyed by service for the same reason as `lastAudible`: a rebuild replaces
+// the onSet closures, and a write already in flight must still coalesce.
+const pendingWrites = new WeakMap<Service, PendingWrite>()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -129,14 +141,13 @@ function wireVolume(
     service.updateCharacteristic(C.Brightness, target)
   }
 
-  const on = service.getCharacteristic(C.On)
-  on.removeOnSet()
-  on.onSet(async (value) => {
-    // Off silences; on restores the last audible level so the toggle is never
-    // inert and never forgets where the volume was.
-    const target = value
-      ? lastAudible.get(service) ?? FULL_VOLUME
-      : 0
+  const flush = async (batch: PendingWrite): Promise<void> => {
+    // Off always silences. Otherwise an explicit brightness wins; a bare On
+    // restores the last audible level so the toggle is never inert and never
+    // forgets where the volume was.
+    const target = batch.on === false
+      ? 0
+      : batch.brightness ?? lastAudible.get(service) ?? FULL_VOLUME
     try {
       await apply(target)
     }
@@ -144,19 +155,44 @@ function wireVolume(
       // errorMessage, never the error object: it carries request context that
       // util.inspect has printed the API key from before.
       log.warn(`Could not change the volume on "${label}": ${errorMessage(error)}`)
-      throw new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
+      const failure = new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
+      for (const waiter of batch.waiters)
+        waiter.reject(failure)
+      return
     }
-  })
+    for (const waiter of batch.waiters)
+      waiter.resolve()
+  }
+
+  // HomeKit writes On and Brightness together when a slider is dragged on an
+  // off tile. Applied separately they raced - the On restore (last audible or
+  // 100) could land after the slider value - so both writes in one tick are
+  // folded into a single volume update that settles both handlers.
+  const write = async (change: Pick<PendingWrite, 'on' | 'brightness'>): Promise<void> => {
+    const existing = pendingWrites.get(service)
+    const batch: PendingWrite = existing ?? { waiters: [] }
+    if (!existing) {
+      pendingWrites.set(service, batch)
+      setImmediate(() => {
+        pendingWrites.delete(service)
+        void flush(batch)
+      })
+    }
+    Object.assign(batch, change)
+    return new Promise((resolve, reject) => {
+      batch.waiters.push({ resolve, reject })
+    })
+  }
+
+  const on = service.getCharacteristic(C.On)
+  on.removeOnSet()
+  on.onSet(async value => write({
+    on: Boolean(value),
+  }))
 
   const brightness = service.getCharacteristic(C.Brightness)
   brightness.removeOnSet()
-  brightness.onSet(async (value) => {
-    try {
-      await apply(Math.min(FULL_VOLUME, Math.max(0, Math.round(Number(value)))))
-    }
-    catch (error) {
-      log.warn(`Could not change the volume on "${label}": ${errorMessage(error)}`)
-      throw new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
-    }
-  })
+  brightness.onSet(async value => write({
+    brightness: Math.min(FULL_VOLUME, Math.max(0, Math.round(Number(value)))),
+  }))
 }
