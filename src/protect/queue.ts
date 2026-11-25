@@ -1,10 +1,24 @@
-import { isRetryable, ProtectRateLimitError } from './errors.js'
+import { isRetryable, ProtectRateLimitError, ProtectUnavailableError } from './errors.js'
 
 export interface RequestQueueOptions {
   /** Maximum simultaneous in-flight tasks. The console returns 429 under burst load. */
   concurrency?: number
   maxRetries?: number
   baseDelayMs?: number
+}
+
+/** Per-request limits. Each one can only tighten the queue's own defaults. */
+export interface RunPolicy {
+  /** A CAP on the queue's `maxRetries`, never a raise: a test queue with 0 stays at 0. */
+  maxRetries?: number
+  /** Which errors this request may retry. Defaults to `isRetryable`. */
+  retryable?: (error: unknown) => boolean
+  /**
+   * Total budget, from submission: queue wait, every attempt and every backoff.
+   * HomeKit abandons a request on its own clock, so an answer after that clock
+   * runs out is worthless and only keeps a slot from someone still waiting.
+   */
+  deadlineMs?: number
 }
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -26,49 +40,55 @@ export class RequestQueue {
     this.baseDelayMs = options.baseDelayMs ?? 500
   }
 
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    await this.acquire()
-    try {
-      return await this.attempt(task)
-    }
-    finally {
-      this.release()
-    }
-  }
+  /**
+   * Runs `task`, retrying per the policy. The task is handed the milliseconds
+   * left in its deadline (undefined when it has none) so it can bound its own
+   * transport timeout to it.
+   *
+   * The slot is held only while an attempt is ON THE WIRE, and released for the
+   * backoff in between. A sleeping retry does no work, and holding its slot used
+   * to park a HomeKit write behind up to a minute of somebody else's snapshot
+   * backoff — long enough for HAP to give up and show No Response. The cost is
+   * that a retry rejoins at the back of the queue instead of keeping its place.
+   */
+  async run<T>(task: (remainingMs: number | undefined) => Promise<T>, policy: RunPolicy = {}): Promise<T> {
+    const deadline = policy.deadlineMs === undefined
+      ? undefined
+      : performance.now() + policy.deadlineMs
+    const remaining = () => deadline === undefined
+      ? undefined
+      : Math.max(0, deadline - performance.now())
+    const maxRetries = Math.min(this.maxRetries, policy.maxRetries ?? Number.POSITIVE_INFINITY)
+    const retryable = policy.retryable ?? isRetryable
 
-  private async attempt<T>(task: () => Promise<T>): Promise<T> {
-    // Retries run here, inside the concurrency slot acquired by run(), not by
-    // re-queuing the task. This deliberately holds the slot for the whole
-    // backoff chain: with concurrency: 1 and a long run of real Retry-After
-    // delays, every other queued request waits out the full chain too. That
-    // is the intended tradeoff, not an oversight — a 429/503 means the
-    // console is telling us to back off, so releasing the slot and letting a
-    // fresh request in would likely just draw a second throttle response.
-    // Retrying in place also preserves submission order: a retrying request
-    // keeps its spot instead of letting newer requests cut in front of it.
-    let lastError: unknown
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+    for (let attempt = 0; ; attempt++) {
+      await this.acquire(remaining())
+      let error: unknown
       try {
-        return await task()
+        return await task(remaining())
       }
-      catch (error) {
-        lastError = error
-        if (!isRetryable(error) || attempt === this.maxRetries)
-          throw error
-        const serverDelay = error instanceof ProtectRateLimitError
-          ? error.retryAfterMs
-          : undefined
-        await sleep(serverDelay ?? this.baseDelayMs * 2 ** attempt)
+      catch (caught) {
+        error = caught
       }
+      finally {
+        this.release()
+      }
+      if (!retryable(error) || attempt >= maxRetries)
+        throw error
+      const serverDelay = error instanceof ProtectRateLimitError
+        ? error.retryAfterMs
+        : undefined
+      const delay = serverDelay ?? this.baseDelayMs * 2 ** attempt
+      const left = remaining()
+      // A retry that could only start after the deadline is a guaranteed miss.
+      if (left !== undefined && delay >= left)
+        throw error
+      await sleep(delay)
     }
-    // Unreachable: the loop above always returns or throws on its final
-    // iteration (attempt === this.maxRetries forces the `throw error`
-    // branch). This just satisfies TypeScript's control-flow analysis for
-    // the return type — it is not live give-up logic.
-    throw lastError
   }
 
-  private async acquire(): Promise<void> {
+  /** Resolves with a slot, or rejects once `withinMs` passes without one. */
+  private async acquire(withinMs: number | undefined): Promise<void> {
     if (this.active < this.concurrency) {
       this.active++
       return
@@ -77,7 +97,25 @@ export class RequestQueue {
     // accounted for, so no increment here. Incrementing again would
     // let a fresh acquire() steal the slot in the gap between
     // release()'s decrement and this continuation running.
-    await new Promise<void>(resolve => this.waiting.push(resolve))
+    await new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const waiter = () => {
+        clearTimeout(timer)
+        resolve()
+      }
+      this.waiting.push(waiter)
+      if (withinMs === undefined)
+        return
+      timer = setTimeout(() => {
+        // Removed from the line before rejecting, so release() can never hand
+        // a slot to a request that has already given up — that slot would be
+        // lost for good.
+        const index = this.waiting.indexOf(waiter)
+        if (index !== -1)
+          this.waiting.splice(index, 1)
+        reject(new ProtectUnavailableError('Timed out waiting for the console: too many requests are already in flight.'))
+      }, withinMs)
+    })
   }
 
   private release(): void {

@@ -92,7 +92,14 @@ export class FakeService {
  * which is what `camera.ts`'s removal loop has to leave alone.
  */
 export class FakeCameraController {
+  /** Session ids the plugin asked HAP to end, in order. */
+  readonly forceStopped: string[] = []
+
   constructor(public readonly options: Record<string, unknown>) {}
+
+  forceStopStreamingSession(sessionId: string): void {
+    this.forceStopped.push(sessionId)
+  }
 
   constructServices(): FakeService[] {
     const count = (this.options.cameraStreamCount as number | undefined) ?? 1

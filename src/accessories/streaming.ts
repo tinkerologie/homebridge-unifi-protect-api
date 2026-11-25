@@ -2,6 +2,7 @@ import type {
   AudioStreamingCodec,
   AudioStreamingOptions,
   AudioStreamingSamplerate,
+  CameraController,
   CameraStreamingDelegate,
   PrepareStreamCallback,
   PrepareStreamRequest,
@@ -18,7 +19,7 @@ import type { StreamUrls } from '../protect/stream.js'
 import type { Quality, QualityPreference } from './quality.js'
 import { Buffer } from 'node:buffer'
 import { createSocket } from 'node:dgram'
-import { errorMessage } from '../protect/errors.js'
+import { errorMessage, ProtectConflictError } from '../protect/errors.js'
 import { FfmpegProcess, hasEncoder, redactStreamUrls, runFfmpeg } from '../protect/ffmpeg.js'
 import { buildTalkbackArgs, TalkbackRelay, talkbackSdp } from '../protect/talkback.js'
 import { selectQuality } from './quality.js'
@@ -388,6 +389,13 @@ interface SessionRequest {
 const SNAPSHOT_TTL_MS = 2_000
 
 /**
+ * How old a cached JPEG may be and still stand in for a failed fetch. A tile a
+ * few seconds behind beats a broken one while the console is slow; past this it
+ * would be passing off a stale scene as the camera's view.
+ */
+const SNAPSHOT_STALE_MAX_MS = 60_000
+
+/**
  * Slots taken between the cap check and the spawn. The cap counts running
  * ffmpeg processes, and there is an await (the stream URL, sometimes an encoder
  * probe) before the first one exists — without this, two cold starts racing
@@ -487,6 +495,15 @@ export class StreamingDelegate implements CameraStreamingDelegate {
    */
   private readonly starting = new Map<string, boolean>()
   private snapshotCache?: { at: number, jpeg: Buffer }
+  /** The fetch every concurrent poll joins, so a room of tiles costs one request per camera. */
+  private snapshotInFlight?: Promise<Buffer>
+  /**
+   * Live-view processes WE asked to die. Their exit is expected and must not be
+   * reported to HomeKit as a failure — including one whose kill failed and that
+   * exits on its own later, which is why this is not keyed off the session map.
+   */
+  private readonly stopping = new WeakSet<FfmpegProcess>()
+  private controller?: Pick<CameraController, 'forceStopStreamingSession'>
   private audioCodec?: Promise<AudioCodec | undefined>
   private warnedAboutAudio = false
   /** Latched by stopAll(). See the check in startSession. */
@@ -507,6 +524,16 @@ export class StreamingDelegate implements CameraStreamingDelegate {
   }
 
   /**
+   * The controller this delegate serves. Set after construction because the
+   * controller is built FROM the delegate, so neither can be handed the other
+   * up front. Without it an ffmpeg that dies mid-stream still cleans up, but
+   * HomeKit is not told and the viewer sits on a frozen frame until iOS gives up.
+   */
+  attachController(controller: Pick<CameraController, 'forceStopStreamingSession'>): void {
+    this.controller = controller
+  }
+
+  /**
    * Protect serves JPEGs directly, so a snapshot costs no transcode at all.
    * HomeKit polls snapshots far more eagerly than expected; the short cache
    * keeps that off the console.
@@ -515,24 +542,41 @@ export class StreamingDelegate implements CameraStreamingDelegate {
    * shows the MAIN lens. The cache lives on the instance and each lens has its
    * own delegate, so the two can never serve each other's image.
    *
-   * ponytail: caches the result, not the in-flight promise, so two simultaneous
-   * first polls both reach the console. Dedupe the promise if that ever shows up.
+   * Concurrent polls join one in-flight request: opening a room of tiles used
+   * to send one per poll, and on a slow console those filled the request queue
+   * that HomeKit writes wait in. A failed fetch serves the last good JPEG while
+   * it is recent (see SNAPSHOT_STALE_MAX_MS).
    */
-  async snapshot(): Promise<Buffer> {
-    const now = performance.now()
-    if (this.snapshotCache && now - this.snapshotCache.at < SNAPSHOT_TTL_MS)
-      return this.snapshotCache.jpeg
+  snapshot(): Promise<Buffer> {
+    if (this.snapshotCache && performance.now() - this.snapshotCache.at < SNAPSHOT_TTL_MS)
+      return Promise.resolve(this.snapshotCache.jpeg)
+    this.snapshotInFlight ??= this.fetchSnapshot().finally(() => {
+      this.snapshotInFlight = undefined
+    })
+    return this.snapshotInFlight
+  }
+
+  private async fetchSnapshot(): Promise<Buffer> {
     try {
       const jpeg = await this.options.client.getSnapshot(this.options.deviceId, this.options.channel === 'package'
         ? { channel: 'package' }
         : {})
-      this.snapshotCache = { at: now, jpeg }
+      // Stamped on arrival, not on request: with joining, the fetch can be
+      // older than any one poll, and the TTL is about the image's age.
+      this.snapshotCache = {
+        at: performance.now(),
+        jpeg,
+      }
       return jpeg
     }
     catch (error) {
+      const cached = this.snapshotCache
+      const stale = cached !== undefined && performance.now() - cached.at < SNAPSHOT_STALE_MAX_MS
       // The string only. `log.error(err)` uses util.inspect, which would print
       // error.cause — the path that leaked the API key in this repo before.
-      this.options.log.warn(`Could not fetch a snapshot for "${this.options.label}": ${errorMessage(error)}`)
+      this.options.log.warn(`Could not fetch a snapshot for "${this.options.label}"${stale ? ' (serving the previous one)' : ''}: ${errorMessage(error)}`)
+      if (stale)
+        return cached.jpeg
       throw error
     }
   }
@@ -721,8 +765,16 @@ export class StreamingDelegate implements CameraStreamingDelegate {
         // of an orphan does displace it from the map. Key orphans separately if
         // an unkillable ffmpeg ever shows up outside a test.
         onExit: () => {
-          if (this.sessions.get(sessionId) === proc)
-            this.sessions.delete(sessionId)
+          if (this.sessions.get(sessionId) !== proc)
+            return
+          this.sessions.delete(sessionId)
+          if (this.stopping.has(proc))
+            return
+          // Died on its own (RTSP drop, GPU error, OOM): HomeKit still thinks
+          // the stream is live. forceStopStreamingSession ends it on the
+          // controller and calls back into stopSession for the rest.
+          this.options.log.warn(`Live view for "${this.options.label}" ended unexpectedly.`)
+          this.controller?.forceStopStreamingSession(sessionId)
         },
       })
       try {
@@ -745,6 +797,7 @@ export class StreamingDelegate implements CameraStreamingDelegate {
       // id nothing will ever stop again: a permanently orphaned 4 MP decode
       // holding a maxStreams slot, and one tap-and-back away on every camera.
       if (this.starting.get(sessionId)) {
+        this.stopping.add(proc)
         proc.stop()
         this.options.log.debug(`The stream for "${this.options.label}" was stopped while it was starting.`)
         return false
@@ -754,7 +807,11 @@ export class StreamingDelegate implements CameraStreamingDelegate {
       // ends up in NO map, nothing ever stops it, and it keeps a maxStreams
       // slot for the life of the plugin. Same class of leak as the talkback
       // path above (see armTalkback); stop it before the overwrite.
-      this.sessions.get(sessionId)?.stop()
+      const replaced = this.sessions.get(sessionId)
+      if (replaced) {
+        this.stopping.add(replaced)
+        replaced.stop()
+      }
       this.sessions.set(sessionId, proc)
       this.options.log.info(`Live view started for "${this.options.label}" (${channel} substream, ${audio ? 'with' : 'no'} audio).`)
       return true
@@ -781,6 +838,8 @@ export class StreamingDelegate implements CameraStreamingDelegate {
     if (this.starting.has(sessionId))
       this.starting.set(sessionId, true)
     const proc = this.sessions.get(sessionId)
+    if (proc)
+      this.stopping.add(proc)
     if (!proc || proc.stop())
       this.sessions.delete(sessionId)
     const talkback = this.talkback.get(sessionId)
@@ -862,7 +921,19 @@ export class StreamingDelegate implements CameraStreamingDelegate {
    * port the relay should forward to. Called at most once, by the relay.
    */
   private async openTalkback(state: TalkbackSession, audio: RtpTarget, ipv6: boolean): Promise<number | undefined> {
-    const session = await this.options.client.createTalkbackSession(this.options.deviceId)
+    let session
+    try {
+      session = await this.options.client.createTalkbackSession(this.options.deviceId)
+    }
+    catch (error) {
+      // A state, not a fault: somebody else (the Protect app, another viewer)
+      // is talking. Not retried — the relay opens at most once per live view.
+      if (error instanceof ProtectConflictError) {
+        this.options.log.info(`Talkback for "${this.options.label}" is busy: another talkback session is already in progress on this camera. Close the live view and try again once it ends.`)
+        return undefined
+      }
+      throw error
+    }
     // Reserved in the SAME family the relay will send from: a port proven free
     // on udp4 says nothing about udp6, and ffmpeg is about to bind it as the v6
     // loopback. bind-and-close rather than reservePort so the family is

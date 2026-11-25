@@ -6,7 +6,7 @@ import type { LightCallbacks } from './accessories/light.js'
 import type { SensorChange } from './accessories/tracker.js'
 import type { ProtectPluginConfig } from './config.js'
 import type { FfmpegCapabilities, RunFfmpeg } from './protect/ffmpeg.js'
-import { applyChange, buildCameraServices, isUnderstood } from './accessories/camera.js'
+import { applyChange, buildCameraServices, clearTrackedSensors, isUnderstood } from './accessories/camera.js'
 import { buildChimeServices } from './accessories/chime.js'
 import { buildLightServices } from './accessories/light.js'
 import { ADVERTISED_RECORDING_SIZE } from './accessories/quality.js'
@@ -647,6 +647,19 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
   /** Homebridge replays cached accessories here on startup, before discovery. */
   configureAccessory(accessory: PlatformAccessory): void {
     this.accessories.set(accessory.UUID, accessory)
+    // HAP has just restored the cached characteristic values, and the tracker
+    // is empty: a sensor detected at shutdown would otherwise come back stuck
+    // on. Cameras only — a light's PIR sensor is live device state, re-read on
+    // discovery.
+    if ((accessory.context?.device as { modelKey?: unknown } | undefined)?.modelKey === 'camera') {
+      try {
+        clearTrackedSensors(this.api, accessory)
+      }
+      catch (error) {
+        // A throw here would fail Homebridge's cache restore for the plugin.
+        this.log.warn(`Could not clear cached sensor state on "${accessory.displayName}": ${errorMessage(error)}`)
+      }
+    }
   }
 
   /**
@@ -1012,7 +1025,7 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
           })
         : undefined
 
-      accessory.configureController(new this.api.hap.CameraController({
+      const controller = new this.api.hap.CameraController({
         cameraStreamCount: delegate.maxStreams,
         delegate,
         streamingOptions: {
@@ -1032,7 +1045,10 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
               },
             }
           : {}),
-      }))
+      })
+      // Lets the delegate end a HomeKit session whose ffmpeg died unasked.
+      delegate.attachController(controller)
+      accessory.configureController(controller)
       // AFTER configureController, so a throw from it leaves nothing registered
       // that the removal sweep would have to clean up.
       if (recorder) {
@@ -1156,7 +1172,7 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
       // holds a decode open indefinitely.
       this.delegates.set(uuid, delegate)
 
-      accessory.configureController(new this.api.hap.CameraController({
+      const controller = new this.api.hap.CameraController({
         cameraStreamCount: delegate.maxStreams,
         delegate,
         streamingOptions: {
@@ -1168,7 +1184,10 @@ export class UniFiProtectPlatform implements DynamicPlatformPlugin {
         // No doorbell option: sub-project 2a already builds the subtyped `ring`
         // Doorbell on the MAIN accessory, and a second makes the doorbell
         // appear twice in Home.app.
-      }))
+      })
+      // Lets the delegate end a HomeKit session whose ffmpeg died unasked.
+      delegate.attachController(controller)
+      accessory.configureController(controller)
     }
     catch (error) {
       this.delegates.delete(uuid)

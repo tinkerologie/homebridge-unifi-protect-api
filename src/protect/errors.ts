@@ -12,6 +12,13 @@ export class ProtectAuthError extends ProtectError {}
 /** 404. The requested device no longer exists in Protect. */
 export class ProtectNotFoundError extends ProtectError {}
 
+/**
+ * 409. The console refused because something conflicting is already in
+ * progress — on `POST .../talkback-session`, another talkback session (Protect
+ * 7.4.102 documents this). A state, not a fault: never retried.
+ */
+export class ProtectConflictError extends ProtectError {}
+
 /** 429. Includes the server-supplied retry delay when present. */
 export class ProtectRateLimitError extends ProtectError {
   constructor(message: string, readonly retryAfterMs?: number) {

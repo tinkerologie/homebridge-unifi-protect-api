@@ -135,4 +135,107 @@ describe('requestQueue', () => {
 
     expect(order).toEqual([1, 2, 3, 4, 5])
   })
+  it('caps retries per request below the queue default', async () => {
+    const queue = new RequestQueue({ concurrency: 1, maxRetries: 3, baseDelayMs: 10 })
+    let attempts = 0
+    const promise = queue.run(async () => {
+      attempts++
+      throw new ProtectUnavailableError('down')
+    }, { maxRetries: 1 })
+    const assertion = expect(promise).rejects.toBeInstanceOf(ProtectUnavailableError)
+    await vi.runAllTimersAsync()
+    await assertion
+    expect(attempts).toBe(2)
+  })
+
+  it('never raises retries above the queue default', async () => {
+    const queue = new RequestQueue({ concurrency: 1, maxRetries: 0, baseDelayMs: 10 })
+    let attempts = 0
+    const promise = queue.run(async () => {
+      attempts++
+      throw new ProtectUnavailableError('down')
+    }, { maxRetries: 5 })
+    const assertion = expect(promise).rejects.toBeInstanceOf(ProtectUnavailableError)
+    await vi.runAllTimersAsync()
+    await assertion
+    expect(attempts).toBe(1)
+  })
+
+  it('lets a request narrow which errors it retries', async () => {
+    const queue = new RequestQueue({ concurrency: 1, maxRetries: 3, baseDelayMs: 10 })
+    let attempts = 0
+    const promise = queue.run(async () => {
+      attempts++
+      throw new ProtectUnavailableError('timed out')
+    }, {
+      retryable: error => error instanceof ProtectRateLimitError,
+    })
+    const assertion = expect(promise).rejects.toBeInstanceOf(ProtectUnavailableError)
+    await vi.runAllTimersAsync()
+    await assertion
+    expect(attempts).toBe(1)
+  })
+
+  it('releases the slot while a request backs off', async () => {
+    const queue = new RequestQueue({ concurrency: 1, maxRetries: 1, baseDelayMs: 1000 })
+    const order: string[] = []
+    let attempts = 0
+    const retrying = queue.run(async () => {
+      attempts++
+      order.push(`retrying-${attempts}`)
+      if (attempts === 1)
+        throw new ProtectUnavailableError('down')
+    })
+    const other = queue.run(async () => {
+      order.push('other')
+    })
+    await vi.advanceTimersByTimeAsync(10)
+    // The other request ran during the backoff, not after it.
+    expect(order).toEqual(['retrying-1', 'other'])
+    await vi.runAllTimersAsync()
+    await Promise.all([retrying, other])
+    expect(order).toEqual(['retrying-1', 'other', 'retrying-2'])
+  })
+
+  it('hands each attempt the time left in its deadline', async () => {
+    const queue = new RequestQueue({ concurrency: 1, maxRetries: 0 })
+    let seen: number | undefined
+    await queue.run(async (remainingMs) => {
+      seen = remainingMs
+    }, { deadlineMs: 7000 })
+    expect(seen).toBe(7000)
+    let unbounded: number | undefined = 0
+    await queue.run(async (remainingMs) => {
+      unbounded = remainingMs
+    })
+    expect(unbounded).toBeUndefined()
+  })
+
+  it('fails a request whose deadline passes while it waits for a slot', async () => {
+    const queue = new RequestQueue({ concurrency: 1 })
+    const blocker = queue.run(() => new Promise<void>(resolve => setTimeout(resolve, 10_000)))
+    const task = vi.fn(async () => 'ran')
+    const late = queue.run(task, { deadlineMs: 2000 })
+    const assertion = expect(late).rejects.toBeInstanceOf(ProtectUnavailableError)
+    await vi.advanceTimersByTimeAsync(2001)
+    await assertion
+    await vi.runAllTimersAsync()
+    await blocker
+    expect(task).not.toHaveBeenCalled()
+    // The abandoned waiter did not swallow the slot.
+    await expect(queue.run(async () => 'next')).resolves.toBe('next')
+  })
+
+  it('does not back off past its deadline', async () => {
+    const queue = new RequestQueue({ concurrency: 1, maxRetries: 3, baseDelayMs: 5000 })
+    let attempts = 0
+    const promise = queue.run(async () => {
+      attempts++
+      throw new ProtectUnavailableError('down')
+    }, { deadlineMs: 3000 })
+    const assertion = expect(promise).rejects.toBeInstanceOf(ProtectUnavailableError)
+    await vi.advanceTimersByTimeAsync(1)
+    await assertion
+    expect(attempts).toBe(1)
+  })
 })

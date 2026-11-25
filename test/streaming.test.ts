@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events'
 import { inspect } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { audioStreamingCodec, buildFfmpegArgs, chooseAudioCodec, defaultMaxStreams, randomSsrc, StreamingDelegate } from '../src/accessories/streaming.js'
+import { ProtectConflictError } from '../src/protect/errors.js'
 import { FfmpegProcess } from '../src/protect/ffmpeg.js'
 
 const CAPS_HW = { path: '/usr/bin/ffmpeg', encoder: 'h264_vaapi' as const, hwaccel: 'vaapi' as const }
@@ -457,6 +458,61 @@ describe('streamingDelegate snapshots', () => {
     expect(inspect(error, { depth: 5 })).not.toContain('SECRET-KEY')
   })
 
+  it('joins concurrent polls onto one console request', async () => {
+    let resolveSnapshot!: (jpeg: Buffer) => void
+    const { delegate, getSnapshot } = makeDelegate({
+      getSnapshot: () => new Promise<Buffer>((resolve) => {
+        resolveSnapshot = resolve
+      }),
+    })
+    const first = delegate.snapshot()
+    const second = delegate.snapshot()
+    resolveSnapshot(jpeg)
+    expect(await first).toBe(jpeg)
+    expect(await second).toBe(jpeg)
+    expect(getSnapshot).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks the console again after a joined request fails', async () => {
+    let calls = 0
+    const { delegate, getSnapshot } = makeDelegate({
+      getSnapshot: async () => {
+        calls++
+        if (calls === 1)
+          throw new Error('down')
+        return jpeg
+      },
+    })
+    await expect(delegate.snapshot()).rejects.toThrow('down')
+    expect(await delegate.snapshot()).toBe(jpeg)
+    expect(getSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('serves the last good jpeg when a later fetch fails, while it is recent', async () => {
+    vi.useFakeTimers()
+    try {
+      let fail = false
+      const { delegate, log } = makeDelegate({
+        getSnapshot: async () => {
+          if (fail)
+            throw new Error('timed out')
+          return jpeg
+        },
+      })
+      await delegate.snapshot()
+      fail = true
+      vi.advanceTimersByTime(5_000)
+      expect(await delegate.snapshot()).toBe(jpeg)
+      expect(log.warn).toHaveBeenCalledTimes(1)
+      // Too old to pass off as the camera's view: the failure surfaces.
+      vi.advanceTimersByTime(120_000)
+      await expect(delegate.snapshot()).rejects.toThrow('timed out')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('answers a snapshot request through the hap callback', async () => {
     const { delegate } = makeDelegate()
     const buffer = await new Promise((resolve) => {
@@ -611,6 +667,78 @@ describe('streamingDelegate sessions', () => {
     delegate.stopSession('a')
     expect(delegate.activeCount).toBe(0)
     expect(FfmpegProcess.activeCount).toBe(0)
+  })
+
+  it('tells homekit when ffmpeg dies on its own, so the viewer is not left on a frozen frame', async () => {
+    const children: ChildProcess[] = []
+    const { delegate, log } = makeDelegate({
+      spawn: () => {
+        const child = fakeChild()
+        children.push(child)
+        return child
+      },
+    })
+    const controller = {
+      forceStopStreamingSession: vi.fn(),
+    }
+    delegate.attachController(controller)
+    await delegate.startSession('a', REQUEST, RTP)
+
+    children[0]!.emit('close', 1)
+
+    expect(controller.forceStopStreamingSession).toHaveBeenCalledWith('a')
+    expect(delegate.activeCount).toBe(0)
+    expect(JSON.stringify(log.warn.mock.calls)).toContain('Driveway')
+  })
+
+  it('does not force-stop a session homekit itself stopped', async () => {
+    const { delegate } = makeDelegate()
+    const controller = {
+      forceStopStreamingSession: vi.fn(),
+    }
+    delegate.attachController(controller)
+    await delegate.startSession('a', REQUEST, RTP)
+
+    delegate.stopSession('a')
+    delegate.stopAll()
+
+    expect(controller.forceStopStreamingSession).not.toHaveBeenCalled()
+  })
+
+  it('does not force-stop a session whose kill failed and which exits later', async () => {
+    let child!: ChildProcess
+    const { delegate } = makeDelegate({
+      spawn: () => {
+        child = fakeChild()
+        // The first kill is not delivered; the process exits on its own later.
+        ;(child as unknown as { kill: () => boolean }).kill = () => false
+        return child
+      },
+    })
+    const controller = {
+      forceStopStreamingSession: vi.fn(),
+    }
+    delegate.attachController(controller)
+    await delegate.startSession('a', REQUEST, RTP)
+    delegate.stopSession('a')
+
+    child.emit('close', 0)
+
+    expect(controller.forceStopStreamingSession).not.toHaveBeenCalled()
+  })
+
+  it('cleans up an unexpected exit even before a controller is attached', async () => {
+    const children: ChildProcess[] = []
+    const { delegate } = makeDelegate({
+      spawn: () => {
+        const child = fakeChild()
+        children.push(child)
+        return child
+      },
+    })
+    await delegate.startSession('a', REQUEST, RTP)
+    children[0]!.emit('close', 1)
+    expect(delegate.activeCount).toBe(0)
   })
 
   it('enforces the cap host-wide, so a second camera cannot exceed it', async () => {
@@ -1519,6 +1647,28 @@ describe('talkback', () => {
     // Nothing was spawned, and nothing is forwarded.
     expect(spawn).toHaveBeenCalledTimes(1)
     expect(socket.send).not.toHaveBeenCalled()
+    delegate.stopSession(sessionId)
+  })
+
+  it('reports a busy talkback once, as busy, and does not retry or spawn', async () => {
+    const { spawn, socket, delegate, sessionId, log, createTalkbackSession } = await startTalkbackSession({
+      createTalkbackSession: async () => {
+        throw new ProtectConflictError('POST /v1/cameras/cam1/talkback-session: conflict (409)')
+      },
+    })
+    socket.emit('message', rtp(1))
+    await until(() => log.info.mock.calls.some(([m]) => String(m).includes('busy')))
+    socket.emit('message', rtp(2))
+    await new Promise(resolve => setTimeout(resolve, 5))
+
+    const busy = log.info.mock.calls.filter(([m]) => String(m).includes('busy'))
+    expect(busy).toHaveLength(1)
+    expect(String(busy[0]![0])).toContain('Driveway')
+    expect(String(busy[0]![0])).toContain('another talkback session')
+    // Not reported as a generic failure.
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('Could not start talkback')
+    expect(createTalkbackSession).toHaveBeenCalledTimes(1)
+    expect(spawn).toHaveBeenCalledTimes(1)
     delegate.stopSession(sessionId)
   })
 
