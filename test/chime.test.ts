@@ -190,6 +190,8 @@ describe('buildChimeServices', () => {
 
     expect(setVolume).toHaveBeenCalledTimes(1)
     expect(setVolume).toHaveBeenCalledWith(dingDong.id, 30)
+    // The tile is corrected once HAP has committed the client's values.
+    await new Promise(resolve => setImmediate(resolve))
     expect(bulb.valueOf_(C.On)).toBe(true)
     expect(bulb.valueOf_(C.Brightness)).toBe(30)
   })
@@ -258,6 +260,50 @@ describe('buildChimeServices', () => {
 
     expect(on.value).toBe(expectOn)
     expect(brightness.value).toBe(expectBrightness)
+  })
+
+  // Writes run concurrently through the request queue and can finish out of
+  // order. The older one must not put its value back on the tile afterwards.
+  it('keeps the newest write on the tile when an older write finishes last', async () => {
+    const releases: (() => void)[] = []
+    const { accessory } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const older = brightness.setHandler!(10) as Promise<void>
+    await tick()
+    const newer = brightness.setHandler!(70) as Promise<void>
+    await tick()
+    releases[1]!()
+    await newer
+    brightness.value = 70
+    releases[0]!()
+    await older
+    brightness.value = 10
+    await tick()
+
+    expect(bulb.valueOf_(C.Brightness)).toBe(70)
+  })
+
+  it('keeps a console update that lands between a write and its tile correction', async () => {
+    const { accessory, build } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await bulb.getCharacteristic(C.Brightness).setHandler!(30)
+    build({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 45, repeatTimes: 1 },
+      ],
+    })
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(bulb.valueOf_(C.Brightness)).toBe(45)
   })
 
   it('rejects both coalesced writes when the single update fails', async () => {

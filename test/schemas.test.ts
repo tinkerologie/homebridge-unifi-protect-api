@@ -5,6 +5,7 @@ import {
   chimeSchema,
   existingRtspsStreamsSchema,
   externalArmProfilePatchSchema,
+  externalArmProfileRequestSchema,
   fobArmControlSettingsSchema,
   fobKeypadSettingsSchema,
   lightSchema,
@@ -50,6 +51,14 @@ describe('generated schemas parse real hardware payloads', () => {
   it('enforces minProperties on external arm profile patches', () => {
     expect(externalArmProfilePatchSchema.safeParse({}).success).toBe(false)
     expect(externalArmProfilePatchSchema.safeParse({ title: 'Away' }).success).toBe(true)
+    // The nested schedule object carries its own minProperties: 1.
+    const allDay = {
+      mon: { type: 'all_day' },
+    }
+    expect(externalArmProfilePatchSchema.safeParse({ schedule: {} }).success).toBe(false)
+    expect(externalArmProfilePatchSchema.safeParse({ schedule: allDay }).success).toBe(true)
+    expect(externalArmProfileRequestSchema.shape.schedule.safeParse({}).success).toBe(false)
+    expect(externalArmProfileRequestSchema.shape.schedule.safeParse(allDay).success).toBe(true)
   })
 
   it('accepts the 7.3.70 fob controls and validates keypad volume bounds', () => {

@@ -71,7 +71,16 @@ export class RequestQueue {
       await this.acquire(remaining())
       let error: unknown
       try {
-        return await task(remaining())
+        // Checked again with the slot in hand: a waiter can be handed a slot
+        // by release() after its deadline passed but before its own timer
+        // fired. The finally below gives that slot straight back.
+        const left = remaining()
+        if (left === 0) {
+          throw attempt > 0
+            ? lastError
+            : new ProtectUnavailableError('Timed out waiting for the console: the request deadline passed before it could be sent.')
+        }
+        return await task(left)
       }
       catch (caught) {
         error = caught

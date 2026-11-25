@@ -152,6 +152,8 @@ describe('requestQueue', () => {
     const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
     try {
       const queue = new RequestQueue({ baseDelayMs: 5 })
+      // The caller must see the real failure, not a generic deadline error.
+      const original = new ProtectUnavailableError('slow')
       let calls = 0
       const pending = queue.run(async () => {
         calls++
@@ -162,11 +164,80 @@ describe('requestQueue', () => {
         setTimeout(() => {
           now = 20
         }, 0)
-        throw new ProtectUnavailableError('slow')
+        throw original
       }, { deadlineMs: 10 }).catch(error => error)
       await vi.advanceTimersByTimeAsync(50)
       const result = await pending
-      expect(result).toBeInstanceOf(ProtectUnavailableError)
+      expect(result).toBe(original)
+      expect(calls).toBe(1)
+    }
+    finally {
+      clock.mockRestore()
+    }
+  })
+
+  // release() can hand a slot to a waiter whose deadline has already passed,
+  // before the waiter's own timer fires. That waiter must not reach the wire.
+  it('does not dispatch a waiter handed a slot after its deadline passed', async () => {
+    let now = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      const queue = new RequestQueue({ concurrency: 1 })
+      let release!: () => void
+      let started!: () => void
+      const holding = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const holder = queue.run(() => new Promise<void>((resolve) => {
+        release = resolve
+        started()
+      }))
+      await holding
+      const late = vi.fn(async () => 'sent')
+      const waiting = queue.run(late, { deadlineMs: 10 }).catch(error => error)
+      // The deadline passes, then the slot frees before the waiter's timer runs.
+      now = 20
+      release()
+      await holder
+      expect(await waiting).toBeInstanceOf(ProtectUnavailableError)
+      expect(late).not.toHaveBeenCalled()
+      // The slot went straight back: the queue still serves a new request.
+      await expect(queue.run(async () => 'ok')).resolves.toBe('ok')
+    }
+    finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('reports the real failure when a retry is handed its slot after the deadline', async () => {
+    let now = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      const queue = new RequestQueue({ concurrency: 1, baseDelayMs: 5 })
+      const original = new ProtectUnavailableError('first attempt failed')
+      let calls = 0
+      const outcome = queue.run(async () => {
+        calls++
+        throw original
+      }, { deadlineMs: 100 }).catch(error => error)
+      // While the failed request backs off, another one takes the only slot.
+      let release!: () => void
+      let started!: () => void
+      const holding = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const holder = queue.run(() => new Promise<void>((resolve) => {
+        release = resolve
+        started()
+      }))
+      await holding
+      // The backoff ends; the retry queues for the slot.
+      await vi.advanceTimersByTimeAsync(5)
+      // The deadline passes, then the slot frees before the retry's timer runs.
+      now = 200
+      release()
+      await holder
+      expect(await outcome).toBe(original)
       expect(calls).toBe(1)
     }
     finally {

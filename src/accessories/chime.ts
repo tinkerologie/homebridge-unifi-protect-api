@@ -25,12 +25,24 @@ const lastAudible = new WeakMap<Service, number>()
 interface PendingWrite {
   on?: boolean
   brightness?: number
+  /** The service generation this batch was created at. See `generation`. */
+  generation: number
   waiters: { resolve: () => void, reject: (error: unknown) => void }[]
 }
 
 // Keyed by service for the same reason as `lastAudible`: a rebuild replaces
 // the onSet closures, and a write already in flight must still coalesce.
 const pendingWrites = new WeakMap<Service, PendingWrite>()
+
+// Bumped by every new write batch and every console update. Writes run
+// concurrently and can finish out of order, so a batch only touches the tile
+// (or the remembered level) while it is still the newest thing that happened.
+const generation = new WeakMap<Service, number>()
+function nextGeneration(service: Service): number {
+  const next = (generation.get(service) ?? 0) + 1
+  generation.set(service, next)
+  return next
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -128,18 +140,13 @@ function wireVolume(
   // Positive console updates replace the remembered level; a muted echo keeps
   // it. Reads at handler call time also survive replacement of these closures.
   const volume = chimeVolume(device)
+  nextGeneration(service)
   if (volume > 0)
     lastAudible.set(service, volume)
   service.updateCharacteristic(C.On, volume > 0)
   service.updateCharacteristic(C.Brightness, volume)
 
-  const apply = async (target: number): Promise<void> => {
-    await callbacks.setVolume(String(device.id), target)
-    if (target > 0)
-      lastAudible.set(service, target)
-    service.updateCharacteristic(C.On, target > 0)
-    service.updateCharacteristic(C.Brightness, target)
-  }
+  const isCurrent = (batch: PendingWrite) => generation.get(service) === batch.generation
 
   const flush = async (batch: PendingWrite): Promise<void> => {
     // Off always silences. Otherwise an explicit brightness wins; a bare On
@@ -149,7 +156,7 @@ function wireVolume(
       ? 0
       : batch.brightness ?? lastAudible.get(service) ?? FULL_VOLUME
     try {
-      await apply(target)
+      await callbacks.setVolume(String(device.id), target)
     }
     catch (error) {
       // errorMessage, never the error object: it carries request context that
@@ -160,13 +167,15 @@ function wireVolume(
         waiter.reject(failure)
       return
     }
+    if (target > 0 && isCurrent(batch))
+      lastAudible.set(service, target)
     for (const waiter of batch.waiters)
       waiter.resolve()
     // HAP stores the value the client wrote only AFTER a set handler resolves,
-    // overwriting the update apply() made. Correct the tile once HAP has
-    // committed, unless a newer write is already queued and will do it.
+    // so a correction made before that is lost. Correct the tile once HAP has
+    // committed, unless a newer write or a console update has happened since.
     setImmediate(() => {
-      if (pendingWrites.has(service))
+      if (!isCurrent(batch))
         return
       service.updateCharacteristic(C.On, target > 0)
       service.updateCharacteristic(C.Brightness, target)
@@ -179,7 +188,10 @@ function wireVolume(
   // folded into a single volume update that settles both handlers.
   const write = async (change: Pick<PendingWrite, 'on' | 'brightness'>): Promise<void> => {
     const existing = pendingWrites.get(service)
-    const batch: PendingWrite = existing ?? { waiters: [] }
+    const batch: PendingWrite = existing ?? {
+      generation: nextGeneration(service),
+      waiters: [],
+    }
     if (!existing) {
       pendingWrites.set(service, batch)
       setImmediate(() => {
