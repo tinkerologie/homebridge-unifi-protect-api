@@ -68,8 +68,9 @@ function merge(into: PendingWrite, from: PendingWrite): void {
       into.on = from.on
     into.brightness = from.brightness
   }
-  else if (from.on === true) {
-    // A bare On after Off or 0 % means "turn it back on": restore the last
+  else {
+    // A bare On (every batch carries On or Brightness, and Off and volume
+    // are handled above). After Off or 0 % it means "turn it back on": restore the last
     // audible level, not the queued silence. After a real volume, keep it.
     if (into.on === false || into.brightness === 0)
       delete into.brightness

@@ -450,6 +450,64 @@ describe('buildChimeServices', () => {
     expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([50, 50])
   })
 
+  it.each([
+    // A bare On after a queued volume keeps that volume.
+    [
+      'a volume, then a bare On',
+      [
+        [
+          { brightness: 40 },
+        ],
+        [
+          { on: true },
+        ],
+      ],
+      40,
+    ],
+    // A same-tick On and volume after a queued Off: the volume wins.
+    [
+      'Off, then On with a volume in one tick',
+      [
+        [
+          { on: false },
+        ],
+        [
+          { on: true },
+          { brightness: 60 },
+        ],
+      ],
+      60,
+    ],
+  ] as const)('sends the newest intent for %s queued behind a slow write', async (_name, ticks, expected) => {
+    const releases: (() => void)[] = []
+    const { accessory, setVolume } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+    const send = (change: { on?: boolean, brightness?: number }) => change.on === undefined
+      ? hapSet(bulb.getCharacteristic(C.Brightness), change.brightness)
+      : hapSet(bulb.getCharacteristic(C.On), change.on)
+
+    const writes = [
+      hapSet(bulb.getCharacteristic(C.Brightness), 50),
+    ]
+    await tick()
+    for (const changes of ticks) {
+      for (const change of changes)
+        writes.push(send(change))
+      await tick()
+    }
+    releases[0]!()
+    await tick()
+    releases[1]!()
+    await Promise.all(writes)
+
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([50, expected])
+  })
+
   // The budget is per change: an old intermediate step that has run out of
   // time must not take a fresh change down with it.
   it('still sends a fresh change merged into a queued change that ran out of time', async () => {
