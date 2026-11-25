@@ -35,8 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - If the console refuses a WebSocket subscription, the plugin closes the connection immediately and connects again without delay. After an API key error, the plugin does not connect again (#69).
 - If FFmpeg stops unexpectedly during live view, the plugin tells HomeKit to stop the stream. It also stops the talkback encoder and closes the audio socket. Before, the Home app showed a frozen image (#70).
 - The plugin and the settings UI can read the certificate from a console with an IPv6 address in brackets, for example `[fd00::1]`. Before, the connection failed with `ENOTFOUND` (#72).
-- The plugin writes `config.json` to a temporary file and then renames it. A crash during the write does not damage `config.json`. If `config.json` is a symbolic link, the plugin updates the file that the link points to (#71).
+- The plugin writes `config.json` to a temporary file and then renames it. A crash during the write does not damage `config.json`. If `config.json` is a symbolic link, the plugin updates the file that the link points to. The new file keeps the owner, group and permissions of the original file. If the plugin cannot keep them, it does not change `config.json` (#71).
 - After a request deadline ends, the plugin does not send the request again (#67).
+- The request time limit is now absolute. Before, a console that sent data slowly could keep a request open after its time limit (#67).
 
 ### Security
 

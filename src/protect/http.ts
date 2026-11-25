@@ -61,7 +61,11 @@ export const httpsRequestFn: HttpRequestFn = (url, options = {}) =>
         res.on('error', reject)
       },
     )
-    req.setTimeout(options.timeoutMs ?? 15_000, () => req.destroy(new Error('Request timed out')))
+    // Absolute, from now. req.setTimeout is an idle timer that every received
+    // chunk resets, so a console trickling a response could outlive the
+    // request's deadline — and the write budget HomeKit depends on.
+    const deadline = setTimeout(() => req.destroy(new Error('Request timed out')), options.timeoutMs ?? 15_000)
+    req.on('close', () => clearTimeout(deadline))
     req.on('error', reject)
     if (options.body)
       req.write(options.body)

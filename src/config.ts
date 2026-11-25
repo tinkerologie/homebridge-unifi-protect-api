@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { closeSync, fchmodSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, fchmodSync, fchownSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import process from 'node:process'
 import { z } from 'zod'
@@ -169,12 +169,19 @@ function writeFileAtomic(path: string, data: string): void {
   const target = realpathSync(path)
   // Permission bits only. Copying setuid/setgid/sticky can make fchmod fail
   // with EPERM for a non-root Homebridge user.
-  const mode = statSync(target).mode & 0o777
+  const original = statSync(target)
+  const mode = original.mode & 0o777
   const temp = join(dirname(target), `.${basename(target)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`)
   try {
-    // `wx`: never follow or reuse something already at the temp name.
-    const fd = openSync(temp, 'wx', mode)
+    // `wx`: never follow or reuse something already at the temp name. Owner
+    // only until it carries the original's owner and group: a new file takes
+    // the process's group, and applying a 0640 mode to that group could expose
+    // the API key to it.
+    const fd = openSync(temp, 'wx', 0o600)
     try {
+      // Throws EPERM when the owner or group cannot be kept. The original is
+      // then left exactly as it was. (libuv makes this a no-op on Windows.)
+      fchownSync(fd, original.uid, original.gid)
       // openSync's mode is filtered through the umask; set it exactly.
       fchmodSync(fd, mode)
       // writeFileSync loops until every byte is written; a single writeSync

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { parseConfig, settingsFor, storeConsoleCert } from '../src/config.js'
 
 // Passthrough, so storeConsoleCert's rename can be made to fail on demand.
-const fsFaults = vi.hoisted(() => ({ failRename: false }))
+const fsFaults = vi.hoisted(() => ({ failRename: false, failChown: false, chowns: [] as [number, number][] }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -14,6 +14,12 @@ vi.mock('node:fs', async (importOriginal) => {
       if (fsFaults.failRename)
         throw new Error('EIO: rename failed')
       return actual.renameSync(...args)
+    },
+    fchownSync: (fd: number, uid: number, gid: number) => {
+      fsFaults.chowns.push([uid, gid])
+      if (fsFaults.failChown)
+        throw Object.assign(new Error('EPERM: operation not permitted, fchown'), { code: 'EPERM' })
+      return actual.fchownSync(fd, uid, gid)
     },
   }
 })
@@ -484,6 +490,43 @@ describe('storeConsoleCert', () => {
     expect(lstatSync(link).isSymbolicLink()).toBe(true)
     expect(read(target).platforms[0].consoleCert).toBe('PEM')
     expect(readdirSync(join(root, 'volume'))).toEqual(['config.json'])
+  })
+
+  // A 0640 config.json with a private group must not become readable by the
+  // process's own group: the replacement takes the original owner and group
+  // before it gets the original mode or any data.
+  it('gives the replacement the original owner and group', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    const { uid, gid } = statSync(path)
+    fsFaults.chowns.length = 0
+
+    storeConsoleCert(path, '10.0.0.1', 'PEM')
+
+    expect(fsFaults.chowns).toEqual([
+      [uid, gid],
+    ])
+    expect(statSync(path).uid).toBe(uid)
+    expect(statSync(path).gid).toBe(gid)
+  })
+
+  it('leaves the original untouched when its owner and group cannot be kept', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    const original = readFileSync(path, 'utf8')
+
+    fsFaults.failChown = true
+    try {
+      expect(() => storeConsoleCert(path, '10.0.0.1', 'PEM')).toThrow(/EPERM/)
+    }
+    finally {
+      fsFaults.failChown = false
+    }
+
+    expect(readFileSync(path, 'utf8')).toBe(original)
+    expect(readdirSync(dirname(path))).toEqual(['config.json'])
   })
 
   it('leaves the original untouched and cleans up when the replace fails', () => {
