@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The plugin does not retry a talkback or stream creation request after a timeout, because the console possibly created the session already.
 - If a different talkback session is open on the doorbell, the plugin writes one log message: "talkback busy". The plugin does not retry (#65).
 - When you drag the chime volume slider from off, the chime goes to the volume that you set. Before, the volume sometimes went to 100% (#68).
+- After a failed light, status LED or chime change, the tile does not stay on "No Response". Before, the tile showed "No Response" until the next device update (#68).
+- The plugin sends chime volume changes one at a time. While one change is in progress, the plugin keeps only the newest change. If a change waits too long, it fails immediately, before HomeKit stops the request (#68).
 - If the console refuses a WebSocket subscription, the plugin closes the connection immediately and connects again without delay. After an API key error, the plugin does not connect again (#69).
 - If FFmpeg stops unexpectedly during live view, the plugin tells HomeKit to stop the stream. It also stops the talkback encoder and closes the audio socket. Before, the Home app showed a frozen image (#70).
 - The plugin and the settings UI can read the certificate from a console with an IPv6 address in brackets, for example `[fd00::1]`. Before, the connection failed with `ENOTFOUND` (#72).
