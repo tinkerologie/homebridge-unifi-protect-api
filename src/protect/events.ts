@@ -253,12 +253,22 @@ export class ProtectEvents extends EventEmitter<ProtectEventsMap> {
     // `ws` reports a non-101 handshake here, with the real status code. This is
     // the only place 401 is distinguishable from a transient network failure —
     // an `error` alone cannot tell them apart.
+    //
+    // Listening for this event tells `ws` the listener owns the handshake, so
+    // `ws` no longer aborts it. Without `terminate()` the socket stays
+    // CONNECTING until the handshake timeout, and `start()` skips a CONNECTING
+    // channel. On a CONNECTING socket `terminate()` aborts the request,
+    // destroys its TCP socket and emits error then close on the next tick, so
+    // `onclose` runs `scheduleReconnect` — which, after an auth failure, does
+    // nothing because `authFailed` is already set.
     socket.on('unexpected-response', (_request: unknown, response: IncomingMessage) => {
       if (response.statusCode !== 401 && response.statusCode !== 403) {
         this.log.debug(`Protect ${channel} subscription refused with status ${response.statusCode}.`)
+        socket.terminate()
         return
       }
       this.authFailed = true
+      socket.terminate()
       const error = new ProtectAuthError('The Protect API key was rejected by the console.')
       this.log.error(`${error.message} Not retrying the subscriptions until the plugin restarts.`)
       for (const other of CHANNELS)
