@@ -540,6 +540,29 @@ describe('uniFiProtectPlatform', () => {
     expect(platform.accessories.size).toBe(2)
   })
 
+  // A throw from configureAccessory fails Homebridge's whole cache restore for
+  // the plugin. A damaged cached accessory must cost a warning, nothing more.
+  it('keeps a cached camera whose sensors cannot be cleared, with a warning', () => {
+    const { platform } = makePlatform()
+    const damaged = {
+      UUID: 'uuid-damaged',
+      displayName: 'Damaged',
+      context: {
+        device: { id: 'cam9', modelKey: 'camera' },
+      },
+      get services(): never {
+        throw new Error('corrupt cache entry')
+      },
+    }
+    log.warn.mockClear()
+
+    expect(() => platform.configureAccessory(damaged as never)).not.toThrow()
+
+    expect(platform.accessories.get('uuid-damaged')).toBe(damaged)
+    expect(JSON.stringify(log.warn.mock.calls)).toContain('Damaged')
+    expect(JSON.stringify(log.warn.mock.calls)).toContain('corrupt cache entry')
+  })
+
   // treated as authoritative — that path deleted every accessory irreversibly.
   it('keeps accessories when a successful discovery returns nothing at all', async () => {
     const { api, platform } = makePlatform(validConfig, [

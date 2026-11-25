@@ -119,10 +119,9 @@ export class RequestQueue {
       timer = setTimeout(() => {
         // Removed from the line before rejecting, so release() can never hand
         // a slot to a request that has already given up — that slot would be
-        // lost for good.
-        const index = this.waiting.indexOf(waiter)
-        if (index !== -1)
-          this.waiting.splice(index, 1)
+        // lost for good. Always still in the line here: a waiter handed a slot
+        // clears this timer before it can fire.
+        this.waiting.splice(this.waiting.indexOf(waiter), 1)
         reject(new ProtectUnavailableError('Timed out waiting for the console: too many requests are already in flight.'))
       }, withinMs)
     })
