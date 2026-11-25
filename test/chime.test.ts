@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildChimeServices, chimeVolume, isUnderstoodChime } from '../src/accessories/chime.js'
-import { C, FakeAccessory, FakeHapStatusError, hap, S } from './fake-hap.js'
+import { C, FakeAccessory, FakeHapStatusError, hap, hapSet, S } from './fake-hap.js'
 
 const chimes = JSON.parse(readFileSync('test/fixtures/chimes.json', 'utf8'))
 const dingDong = chimes[0]
@@ -169,6 +169,433 @@ describe('buildChimeServices', () => {
 
     await expect(handler(30)).rejects.toBeInstanceOf(FakeHapStatusError)
     expect(log.warn).toHaveBeenCalled()
+  })
+
+  // HomeKit writes On and Brightness together when a slider is dragged on an off
+  // tile. Two PATCHes raced and the On restore (100) could win over the 30.
+  it('coalesces an On and Brightness write in the same tick into one volume update', async () => {
+    const silent = {
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 0, repeatTimes: 1 },
+      ],
+    }
+    const { accessory, setVolume } = setup(silent)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await Promise.all([
+      bulb.getCharacteristic(C.On).setHandler!(true),
+      bulb.getCharacteristic(C.Brightness).setHandler!(30),
+    ])
+
+    expect(setVolume).toHaveBeenCalledTimes(1)
+    expect(setVolume).toHaveBeenCalledWith(dingDong.id, 30)
+    // The tile is corrected once HAP has committed the client's values.
+    await new Promise(resolve => setImmediate(resolve))
+    expect(bulb.valueOf_(C.On)).toBe(true)
+    expect(bulb.valueOf_(C.Brightness)).toBe(30)
+  })
+
+  it('coalesces in either order', async () => {
+    const { accessory, setVolume } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await Promise.all([
+      bulb.getCharacteristic(C.Brightness).setHandler!(25),
+      bulb.getCharacteristic(C.On).setHandler!(true),
+    ])
+
+    expect(setVolume.mock.calls).toEqual([
+      [dingDong.id, 25],
+    ])
+  })
+
+  it('lets an Off in the same tick as a Brightness write silence the chime', async () => {
+    const { accessory, setVolume } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await Promise.all([
+      bulb.getCharacteristic(C.On).setHandler!(false),
+      bulb.getCharacteristic(C.Brightness).setHandler!(60),
+    ])
+
+    expect(setVolume.mock.calls).toEqual([
+      [dingDong.id, 0],
+    ])
+  })
+
+  // Real HAP stores the value the client wrote AFTER the set handler resolves,
+  // which overwrites any correction made inside the handler. The tile must
+  // still end on what the chime actually does.
+  it.each([
+    [
+      'On with Brightness 0',
+      true,
+      0,
+      false,
+      0,
+    ],
+    [
+      'Off with Brightness 60',
+      false,
+      60,
+      false,
+      0,
+    ],
+  ])('shows the real state after HAP commits %s', async (_name, onValue, brightnessValue, expectOn, expectBrightness) => {
+    const { accessory } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const on = bulb.getCharacteristic(C.On)
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const hapWrite = async (characteristic: typeof on, value: unknown) => {
+      await characteristic.setHandler!(value)
+      characteristic.value = value
+    }
+
+    await Promise.all([
+      hapWrite(on, onValue),
+      hapWrite(brightness, brightnessValue),
+    ])
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(on.value).toBe(expectOn)
+    expect(brightness.value).toBe(expectBrightness)
+  })
+
+  // Writes run concurrently through the request queue and can finish out of
+  // order. The older one must not put its value back on the tile afterwards.
+  it('keeps the newest write on the tile when an older write finishes last', async () => {
+    const releases: (() => void)[] = []
+    const { accessory } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const older = brightness.setHandler!(10) as Promise<void>
+    await tick()
+    const newer = brightness.setHandler!(70) as Promise<void>
+    await tick()
+    // Writes are sent one at a time, so the newer one waits for the older.
+    expect(releases).toHaveLength(1)
+    releases[0]!()
+    await older
+    brightness.value = 10
+    await tick()
+    expect(releases).toHaveLength(2)
+    releases[1]!()
+    await newer
+    brightness.value = 70
+    await tick()
+
+    expect(bulb.valueOf_(C.Brightness)).toBe(70)
+  })
+
+  // A console update can land while a write is still in flight. When that
+  // write's handler then resolves, HAP commits the client's value over it.
+  it('restores a console update that landed while a write was in flight', async () => {
+    let release!: () => void
+    const { accessory, build } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const write = brightness.setHandler!(30) as Promise<void>
+    await tick()
+    build({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 45, repeatTimes: 1 },
+      ],
+    })
+    release()
+    await write
+    brightness.value = 30
+    await tick()
+
+    expect(bulb.valueOf_(C.Brightness)).toBe(45)
+  })
+
+  it('keeps a console update that lands between a write and its tile correction', async () => {
+    const { accessory, build } = setup(dingDong)
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    await bulb.getCharacteristic(C.Brightness).setHandler!(30)
+    build({
+      ...dingDong,
+      ringSettings: [
+        { cameraId: 'c', volume: 45, repeatTimes: 1 },
+      ],
+    })
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(bulb.valueOf_(C.Brightness)).toBe(45)
+  })
+
+  it('does not leave the tile stuck on No Response after a failed write', async () => {
+    const { accessory } = setup(dingDong, {
+      setVolume: async () => {
+        throw new Error('console rejected it')
+      },
+    })
+    const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+
+    expect(await hapSet(brightness, 30)).toBe(-70402)
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(brightness.statusCode).toBe(0)
+    expect(brightness.value).toBe(80)
+  })
+
+  // An unrelated device update (or a discovery that read the console before
+  // the write landed) repeats the old volume. It is not news, and must not
+  // undo a write the console then accepts.
+  it('keeps a successful write when an update repeating the old volume lands mid-write', async () => {
+    let release!: () => void
+    const { accessory, build } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    })
+    const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const write = hapSet(brightness, 30)
+    await tick()
+    build(dingDong)
+    release()
+    await write
+    await tick()
+
+    expect(brightness.value).toBe(30)
+  })
+
+  // Dragging the slider while the console is slow writes many values. Only
+  // the newest needs to reach the console, after the one already in flight.
+  it('collapses writes that arrive during an in-flight write into one', async () => {
+    const releases: (() => void)[] = []
+    const { accessory, setVolume } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const brightness = bulb.getCharacteristic(C.Brightness)
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const writes = [
+      hapSet(brightness, 10),
+    ]
+    await tick()
+    for (const value of [20, 30, 40]) {
+      writes.push(hapSet(brightness, value))
+      await tick()
+    }
+    // A later Off, then a later volume: the newest intent is the volume.
+    writes.push(hapSet(bulb.getCharacteristic(C.On), false))
+    await tick()
+    writes.push(hapSet(brightness, 55))
+    await tick()
+    releases[0]!()
+    await tick()
+    releases[1]!()
+    expect(await Promise.all(writes)).toEqual([0, 0, 0, 0, 0, 0])
+
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([10, 55])
+  })
+
+  // Off (or 0 %) then a bare On, both queued behind a slow write: the On means
+  // "turn it back on", which restores the last audible level, not the 0.
+  it.each([
+    [
+      'Brightness 0',
+      false,
+    ],
+    [
+      'Off',
+      true,
+    ],
+  ])('restores the last audible level when %s is followed by a bare On in the queue', async (_name, viaOff) => {
+    const releases: (() => void)[] = []
+    const { accessory, setVolume } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+
+    const writes = [
+      hapSet(bulb.getCharacteristic(C.Brightness), 50),
+    ]
+    await tick()
+    writes.push(viaOff
+      ? hapSet(bulb.getCharacteristic(C.On), false)
+      : hapSet(bulb.getCharacteristic(C.Brightness), 0))
+    await tick()
+    writes.push(hapSet(bulb.getCharacteristic(C.On), true))
+    await tick()
+    releases[0]!()
+    await tick()
+    releases[1]!()
+    await Promise.all(writes)
+
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([50, 50])
+  })
+
+  it.each([
+    // A bare On after a queued volume keeps that volume.
+    [
+      'a volume, then a bare On',
+      [
+        [
+          { brightness: 40 },
+        ],
+        [
+          { on: true },
+        ],
+      ],
+      40,
+    ],
+    // A same-tick On and volume after a queued Off: the volume wins.
+    [
+      'Off, then On with a volume in one tick',
+      [
+        [
+          { on: false },
+        ],
+        [
+          { on: true },
+          { brightness: 60 },
+        ],
+      ],
+      60,
+    ],
+  ] as const)('sends the newest intent for %s queued behind a slow write', async (_name, ticks, expected) => {
+    const releases: (() => void)[] = []
+    const { accessory, setVolume } = setup(dingDong, {
+      setVolume: () => new Promise<void>((resolve) => {
+        releases.push(resolve)
+      }),
+    })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+    const tick = () => new Promise(resolve => setImmediate(resolve))
+    const send = (change: { on?: boolean, brightness?: number }) => change.on === undefined
+      ? hapSet(bulb.getCharacteristic(C.Brightness), change.brightness)
+      : hapSet(bulb.getCharacteristic(C.On), change.on)
+
+    const writes = [
+      hapSet(bulb.getCharacteristic(C.Brightness), 50),
+    ]
+    await tick()
+    for (const changes of ticks) {
+      for (const change of changes)
+        writes.push(send(change))
+      await tick()
+    }
+    releases[0]!()
+    await tick()
+    releases[1]!()
+    await Promise.all(writes)
+
+    expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([50, expected])
+  })
+
+  // The budget is per change: an old intermediate step that has run out of
+  // time must not take a fresh change down with it.
+  it('still sends a fresh change merged into a queued change that ran out of time', async () => {
+    let now = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      const releases: (() => void)[] = []
+      const { accessory, setVolume } = setup(dingDong, {
+        setVolume: () => new Promise<void>((resolve) => {
+          releases.push(resolve)
+        }),
+      })
+      const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+      const tick = () => new Promise(resolve => setImmediate(resolve))
+
+      const first = hapSet(brightness, 10)
+      await tick()
+      now = 100
+      const stale = hapSet(brightness, 20)
+      await tick()
+      now = 2_200
+      const fresh = hapSet(brightness, 70)
+      await tick()
+      now = 2_500
+      releases[0]!()
+      await tick()
+      releases[1]!()
+
+      expect(await first).toBe(0)
+      expect(await stale).toBe(-70402)
+      expect(await fresh).toBe(0)
+      expect(setVolume.mock.calls.map(([, volume]) => volume)).toEqual([10, 70])
+    }
+    finally {
+      clock.mockRestore()
+    }
+  })
+
+  // HAP gives a set handler 9 s. A write that has already waited behind a slow
+  // one cannot finish inside that with its own 7 s budget, so it fails fast
+  // instead of reaching the console after HomeKit gave up on it.
+  it('fails a queued write fast once it has waited past what HAP allows', async () => {
+    let now = 0
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    try {
+      let release!: () => void
+      const { accessory, setVolume } = setup(dingDong, {
+        setVolume: () => new Promise<void>((resolve) => {
+          release = resolve
+        }),
+      })
+      const brightness = accessory.getServiceById(S.Lightbulb, 'chime-volume')!.getCharacteristic(C.Brightness)
+      const tick = () => new Promise(resolve => setImmediate(resolve))
+
+      const first = hapSet(brightness, 10)
+      await tick()
+      const queued = hapSet(brightness, 70)
+      await tick()
+      now = 2_500
+      release()
+
+      expect(await first).toBe(0)
+      expect(await queued).toBe(-70402)
+      expect(setVolume).toHaveBeenCalledTimes(1)
+    }
+    finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('rejects both coalesced writes when the single update fails', async () => {
+    const setVolume = vi.fn(async () => {
+      throw new Error('console rejected it')
+    })
+    const { accessory } = setup(dingDong, { setVolume })
+    const bulb = accessory.getServiceById(S.Lightbulb, 'chime-volume')!
+
+    const results = await Promise.allSettled([
+      bulb.getCharacteristic(C.On).setHandler!(true),
+      bulb.getCharacteristic(C.Brightness).setHandler!(30),
+    ])
+
+    expect(setVolume).toHaveBeenCalledTimes(1)
+    for (const result of results) {
+      expect(result.status).toBe('rejected')
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(FakeHapStatusError)
+    }
+    expect(log.warn).toHaveBeenCalledTimes(1)
   })
 
   it('writes no SerialNumber from a degraded payload', () => {

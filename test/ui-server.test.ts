@@ -166,3 +166,144 @@ describe('discoverRequest', () => {
     expect(result.devices[0]?.hasMic).toBe(false)
   })
 })
+
+describe('host validation', () => {
+  const fetchFor = () => vi.fn(async () => ok({ applicationVersion: '7.2.105', name: 'UDM-Pro' }))
+
+  it.each([
+    '10.0.0.1',
+    '10.0.0.1:7443',
+    'udm.local',
+    'UDM-Pro.example.com:443',
+    '[fe80::1]',
+    '[::1]:7443',
+  ])('accepts %s', async (host) => {
+    const fetchImpl = fetchFor()
+    await testConnectionRequest({ ...creds, host }, { fetchImpl: fetchImpl as never })
+    expect(fetchImpl).toHaveBeenCalledWith(`https://${host}/proxy/protect/integration/v1/meta/info`, expect.anything())
+  })
+
+  it('trims surrounding whitespace before building the url', async () => {
+    const fetchImpl = fetchFor()
+    await testConnectionRequest({ ...creds, host: '  10.0.0.1  ' }, { fetchImpl: fetchImpl as never })
+    expect(fetchImpl).toHaveBeenCalledWith('https://10.0.0.1/proxy/protect/integration/v1/meta/info', expect.anything())
+  })
+
+  it.each([
+    '1.2.3.4/x#',
+    '1.2.3.4/path',
+    '1.2.3.4?q=1',
+    '1.2.3.4#frag',
+    'user:pass@1.2.3.4',
+    'evil.com@10.0.0.1',
+    'https://10.0.0.1',
+    '10.0.0 .1',
+    '10.0.0.1:0',
+    '10.0.0.1:65536',
+    '10.0.0.1:abc',
+    '999.1.1.1',
+    'fe80::1',
+    '[fe80::1%en0]',
+    '[not-ipv6]',
+    '-bad.example.com',
+    'a\r\nb',
+  ])('rejects %j with a readable error, without touching the network', async (host) => {
+    const fetchImpl = vi.fn()
+    await expect(testConnectionRequest({ ...creds, host }, { fetchImpl: fetchImpl as never }))
+      .rejects
+      .toThrow(/not a valid console address/i)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('validates the host before reading the certificate', async () => {
+    const readCert = vi.fn()
+    await expect(consoleCertRequest({ host: '1.2.3.4/x#' }, { readCert: readCert as never }))
+      .rejects
+      .toThrow(/not a valid console address/i)
+    expect(readCert).not.toHaveBeenCalled()
+  })
+
+  it('reads the certificate of the trimmed host', async () => {
+    const readCert = vi.fn(async () => ({
+      pem: CERT_A,
+      fingerprint: fingerprintOf(CERT_A),
+    }))
+    await consoleCertRequest({ host: ' [::1]:7443 ' }, { readCert })
+    expect(readCert).toHaveBeenCalledWith('[::1]:7443')
+  })
+})
+
+describe('credential validation', () => {
+  it('rejects a missing api key without touching the network', async () => {
+    const fetchImpl = vi.fn()
+    await expect(testConnectionRequest({ ...creds, apiKey: '' }, { fetchImpl: fetchImpl as never }))
+      .rejects
+      .toThrow(/enter the api key/i)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('rejects an api key with control characters without echoing it', async () => {
+    const fetchImpl = vi.fn()
+    const error = await testConnectionRequest({ ...creds, apiKey: 'secret\r\nX-Evil: 1' }, { fetchImpl: fetchImpl as never })
+      .catch((e: Error) => e)
+    expect(String((error as Error).message)).toMatch(/api key/i)
+    expect(String((error as Error).message)).not.toContain('secret')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a zero-width space', 'secret\u200Bkey'],
+    ['an em dash', 'secret\u2014key'],
+  ])('rejects an api key with %s as an invalid key, not an unreachable console', async (_name, apiKey) => {
+    const fetchImpl = vi.fn()
+    const error = await testConnectionRequest({ ...creds, apiKey }, { fetchImpl: fetchImpl as never })
+      .catch((e: Error) => e)
+    expect(String((error as Error).message)).toMatch(/api key/i)
+    expect(String((error as Error).message)).not.toContain('secret')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('rejects a trusted certificate that is not a string', async () => {
+    const fetchImpl = vi.fn()
+    await expect(testConnectionRequest({ ...creds, consoleCert: 42 as never }, { fetchImpl: fetchImpl as never }))
+      .rejects
+      .toThrow(/certificate has not been trusted/)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})
+
+describe('response shape guards', () => {
+  it('reports a non-list device response readably instead of a TypeError', async () => {
+    const fetchImpl = vi.fn(async (url: string) => ok(url.endsWith('/cameras')
+      ? null
+      : []))
+    await expect(discoverRequest(creds, { fetchImpl: fetchImpl as never }))
+      .rejects
+      .toThrow(/unexpected response.*cameras/i)
+  })
+
+  it('reports an unexpected meta/info response readably', async () => {
+    const fetchImpl = vi.fn(async () => ok(null))
+    await expect(testConnectionRequest(creds, { fetchImpl: fetchImpl as never }))
+      .rejects
+      .toThrow(/unexpected response/i)
+  })
+
+  it('reports a body that is not JSON readably', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html>rebooting</html>', { status: 200 }))
+    await expect(testConnectionRequest(creds, { fetchImpl: fetchImpl as never }))
+      .rejects
+      .toThrow(/unexpected response/i)
+  })
+
+  it('skips list entries that are not objects', async () => {
+    const fetchImpl = vi.fn(async (url: string) => ok(url.endsWith('/lights')
+      ? [
+          null,
+          { id: 'l1', name: 'Porch' },
+        ]
+      : []))
+    const result = await discoverRequest(creds, { fetchImpl: fetchImpl as never })
+    expect(result.devices.map(d => d.id)).toEqual(['l1'])
+  })
+})

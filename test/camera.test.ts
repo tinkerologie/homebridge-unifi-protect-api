@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { inspect } from 'node:util'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyChange, buildCameraServices, desiredSubtypes } from '../src/accessories/camera.js'
-import { C, FakeAccessory, FakeHapStatusError, hap, S } from './fake-hap.js'
+import { applyChange, buildCameraServices, clearTrackedSensors, desiredSubtypes } from '../src/accessories/camera.js'
+import { C, FakeAccessory, FakeHapStatusError, hap, hapSet, S } from './fake-hap.js'
 
 const cameras = JSON.parse(readFileSync('test/fixtures/cameras.json', 'utf8'))
 const byName = (n: string) => cameras.find((c: { name: string }) => c.name === n)
@@ -425,5 +425,44 @@ describe('applyChange', () => {
     // sense of this assertion has flipped versus the old fixture: vehicle and
     // animal sensors are legitimately not built.
     expect(subtypesOf(accessory)).toEqual(['detect-person', 'motion'])
+  })
+})
+
+// HAP restores cached characteristic values, but the tracker starts empty: a
+// sensor detected at shutdown would otherwise come back stuck on.
+describe('clearTrackedSensors', () => {
+  it('clears every tracker-owned sensor and leaves everything else alone', () => {
+    const accessory = new FakeAccessory()
+    const motion = accessory.addService(S.MotionSensor, 'Motion', 'motion').setCharacteristic(C.MotionDetected, true)
+    const person = accessory.addService(S.MotionSensor, 'Person', 'detect-person').setCharacteristic(C.MotionDetected, true)
+    const smoke = accessory.addService(S.SmokeSensor, 'Smoke', 'audio-alrmSmoke').setCharacteristic(C.SmokeDetected, C.SmokeDetected.SMOKE_DETECTED)
+    const co = accessory.addService(S.CarbonMonoxideSensor, 'CO', 'audio-alrmCmonx').setCharacteristic(C.CarbonMonoxideDetected, C.CarbonMonoxideDetected.CO_LEVELS_ABNORMAL)
+    const led = accessory.addService(S.Switch, 'LED', 'led').setCharacteristic(C.On, true)
+    const ring = accessory.addService(S.Doorbell, 'Doorbell', 'ring')
+
+    clearTrackedSensors(api, accessory as never)
+
+    expect(motion.valueOf_(C.MotionDetected)).toBe(false)
+    expect(person.valueOf_(C.MotionDetected)).toBe(false)
+    expect(smoke.valueOf_(C.SmokeDetected)).toBe(C.SmokeDetected.SMOKE_NOT_DETECTED)
+    expect(co.valueOf_(C.CarbonMonoxideDetected)).toBe(C.CarbonMonoxideDetected.CO_LEVELS_NORMAL)
+    expect(led.valueOf_(C.On)).toBe(true)
+    // A stateless ring has nothing to clear, and writing it would fire a press.
+    expect(ring.valueOf_(C.ProgrammableSwitchEvent)).toBeUndefined()
+  })
+})
+
+describe('a failed status LED write', () => {
+  // HAP stores the failed write's status and returns it on every later read.
+  it('does not leave the switch stuck on No Response', async () => {
+    const { accessory } = setup(byName('Garage'), vi.fn(async () => {
+      throw new Error('console rejected it')
+    }))
+    const led = accessory.getServiceById(S.Switch, 'led')!.getCharacteristic(C.On)
+
+    expect(await hapSet(led, false)).toBe(-70402)
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(led.statusCode).toBe(0)
   })
 })

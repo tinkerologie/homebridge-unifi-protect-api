@@ -7,7 +7,7 @@ import {
   ledLevelToPercent,
   percentToLedLevel,
 } from '../src/accessories/light.js'
-import { C, FakeAccessory, FakeHapStatusError, hap, S } from './fake-hap.js'
+import { C, FakeAccessory, FakeHapStatusError, hap, hapSet, S } from './fake-hap.js'
 
 const lights = JSON.parse(readFileSync('test/fixtures/lights.json', 'utf8'))
 const byName = (n: string) => lights.find((l: { name: string }) => l.name === n)
@@ -149,5 +149,27 @@ describe('buildLightServices', () => {
 
   it('tolerates a degraded payload without throwing', () => {
     expect(() => setup({ id: 'x', lightDeviceSettings: 'nope', isLightOn: 'yes' })).not.toThrow()
+  })
+})
+
+// HAP stores the status of a failed write and, with no get handler, returns it
+// on every later read: the tile shows No Response until something updates it.
+describe('a failed write', () => {
+  const tick = () => new Promise(resolve => setImmediate(resolve))
+  const failing = async () => {
+    throw new Error('console rejected it')
+  }
+
+  it.each([
+    ['On', C.On, true],
+    ['Brightness', C.Brightness, 50],
+  ])('does not leave the light %s stuck on No Response', async (_name, type, value) => {
+    const { accessory } = setup(lights[0], { setOn: failing, setBrightness: failing })
+    const characteristic = accessory.getServiceById(S.Lightbulb, 'light')!.getCharacteristic(type)
+
+    expect(await hapSet(characteristic, value)).toBe(-70402)
+    await tick()
+
+    expect(characteristic.statusCode).toBe(0)
   })
 })

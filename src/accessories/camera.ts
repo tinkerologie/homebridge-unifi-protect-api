@@ -1,6 +1,7 @@
 import type { API, Logging, PlatformAccessory, Service } from 'homebridge'
 import type { SensorChange } from './tracker.js'
 import { errorMessage } from '../protect/errors.js'
+import { writeFailure } from './write-failure.js'
 
 /** Labels shown in Home.app, one per stable subtype. */
 export const SUBTYPE_LABELS: Record<string, string> = {
@@ -238,9 +239,33 @@ function wireLed(
       // write succeeded and HAP then commits the new value, so reverting the
       // characteristic in here would simply be overwritten. Throwing is what
       // makes HomeKit put the switch back.
-      throw new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
+      throw writeFailure(api, characteristic)
     }
   })
+}
+
+/**
+ * Writes the clear value to every tracker-driven sensor on a cached accessory.
+ *
+ * HAP restores cached characteristic values on startup, but the tracker starts
+ * empty and `stop()` writes nothing, so a sensor that was detected at shutdown
+ * would come back detected and stay that way until another event of its type
+ * starts and ends. Call it once, from `configureAccessory`, before the event
+ * bus can hold anything: every one of these — the main `motion` sensor
+ * included — is driven only by the event tracker, never by live device state,
+ * so clear is the only value that matches an empty tracker.
+ *
+ * Not from `buildCameraServices`: that runs on every discovery and every
+ * deviceUpdate, and would switch off a sensor an open event is still holding.
+ */
+export function clearTrackedSensors(api: API, accessory: PlatformAccessory): void {
+  for (const service of accessory.services) {
+    const subtype = service.subtype
+    // `ring` is stateless (writing it would fire a press) and `led` is not a sensor.
+    if (!subtype || subtype === 'ring' || subtype === 'led' || !SUBTYPE_LABELS[subtype])
+      continue
+    applyChange(api, accessory, { deviceId: '', subtype, active: false })
+  }
 }
 
 export function applyChange(api: API, accessory: PlatformAccessory, change: SensorChange): void {

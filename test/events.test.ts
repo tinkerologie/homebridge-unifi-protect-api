@@ -366,6 +366,37 @@ describe('protectEvents', () => {
     events.stop()
   })
 
+  // Listening for 'unexpected-response' stops ws aborting the handshake itself,
+  // so the handler has to: otherwise the socket sits CONNECTING until the
+  // handshake timeout and start() skips it.
+  it('aborts a refused handshake so the reconnect runs promptly', async () => {
+    const events = makeEvents()
+    events.start()
+    const devices = FakeSocket.instances[0]!
+
+    devices.emit('unexpected-response', {}, { statusCode: 502 })
+    expect(devices.terminated).toBe(true)
+    const countAtFailure = FakeSocket.instances.length
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(FakeSocket.instances.length).toBeGreaterThan(countAtFailure)
+    events.stop()
+  })
+
+  it('aborts a handshake refused for auth without reconnecting', async () => {
+    const events = makeEvents()
+    events.start()
+    const devices = FakeSocket.instances[0]!
+
+    devices.emit('unexpected-response', {}, { statusCode: 401 })
+    expect(devices.terminated).toBe(true)
+    const countAtFailure = FakeSocket.instances.length
+    await vi.advanceTimersByTimeAsync(600_000)
+
+    expect(FakeSocket.instances).toHaveLength(countAtFailure)
+    events.stop()
+  })
+
   it('emits authFailed so the consumer can surface a rotated key', () => {
     const events = makeEvents()
     const failures: Error[] = []
@@ -581,11 +612,16 @@ describe('protectEvents over a real wss socket', () => {
     connections: number
   }
 
-  async function serve(tls: TestCert): Promise<Peer> {
+  async function serve(tls: TestCert, refuseWith?: number): Promise<Peer> {
     const peer = { upgrades: [] as Peer['upgrades'], connections: 0 } as Peer
     https = createHttpsServer(tls)
     https.on('connection', () => peer.connections++)
-    wss = new WebSocketServer({ server: https })
+    wss = new WebSocketServer({
+      server: https,
+      ...(refuseWith && {
+        verifyClient: (_info, done) => done(false, refuseWith),
+      }),
+    })
     wss.on('headers', (_headers, request) => peer.upgrades.push(request.headers['x-api-key']))
     await new Promise<void>(resolve => https!.listen(0, '127.0.0.1', resolve))
     peer.host = `127.0.0.1:${(https!.address() as AddressInfo).port}`
@@ -640,6 +676,38 @@ describe('protectEvents over a real wss socket', () => {
       // the pin rejected the certificate before `ws` wrote the header.
       expect(peer.connections).toBeGreaterThanOrEqual(2)
       expect(peer.upgrades).toEqual([])
+    }
+    finally {
+      events.stop()
+    }
+  })
+
+  // A console rebooting answers the upgrade with 502. The redial must follow
+  // the backoff (50ms here), not the 15s handshake timeout.
+  it('redials promptly after the console refuses the upgrade', async () => {
+    const peer = await serve(real, 502)
+    const events = connectTo(peer, real.cert)
+    events.start()
+    try {
+      await vi.waitFor(() => expect(peer.connections).toBeGreaterThanOrEqual(4), { timeout: 2_000 })
+    }
+    finally {
+      events.stop()
+    }
+  })
+
+  it('stops dialling after the console rejects the api key at the upgrade', async () => {
+    const peer = await serve(real, 401)
+    const events = connectTo(peer, real.cert)
+    const failures: Error[] = []
+    events.on('authFailed', error => failures.push(error))
+    events.start()
+    try {
+      await vi.waitFor(() => expect(failures.length).toBeGreaterThanOrEqual(1))
+      await new Promise(resolve => setTimeout(resolve, 250))
+
+      // One dial per channel, never a retry.
+      expect(peer.connections).toBe(2)
     }
     finally {
       events.stop()

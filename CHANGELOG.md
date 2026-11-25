@@ -6,417 +6,474 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Restore CI lint compatibility and enforce aggregate validation.
-
-### Fixed
-
-- Test hardware encoders at 720p with a target bitrate before selecting them. Drivers that accept only bitrate-free encoding now fall back to the next encoder or software instead of failing when live view starts.
-
-### Changed
-
-- Prepare 1.0.4 with Protect device-event discovery, chime volume and name-limit fixes, current API schemas, strict lint and coverage gates, and the October 2026 compatibility audit. Full release notes are staged below for the version-driven release workflow.
+## [1.0.5] - 2026-11-25
 
 ### Added
 
-- Document Intel GPU access, FFmpeg and driver installation, and encoding checks for the official Homebridge Docker image.
-
-## [1.0.4]
+- Support Node.js 26. The plugin accepts Node.js `^22.12.0 || ^24 || ^26`, the same range as Homebridge 2.5. CI and the release workflow test on Node.js 22, 24 and 26 (#64).
+- Use the Protect 7.4.102 Integration API contract (#65):
+  - The generated schemas accept the new `sensor.isMountedIncorrectly` and `nvr.featureFlags` fields.
+  - The generated schemas also accept payloads from 7.3.x consoles, which do not send these fields.
+  - The schema generator supports the `minProperties` keyword.
+- Show the documentation for Intel GPU access in the official Homebridge Docker image. The document tells you how to install FFmpeg and the drivers, and how to examine the encoder.
 
 ### Fixed
 
-- Chime mute/unmute now restores the previous audible level after a normal device update or discovery while muted, rather than jumping to full volume.
-- Bound accessory names to HomeKit's 64-character limit without splitting surrogate pairs, retaining the package-camera suffix and existing accessory identities.
-- Declare the missing `nodemon` development dependency while preserving the existing rebuild/restart watch workflow.
-- Device-subscription add, remove and bulk-ID frames now request a coalesced inventory refresh instead of being treated as scalar updates. Existing delayed-removal and shutdown safeguards preserve cached accessories.
-- The read-only Protect diagnostic uses the documented RTSPS GET response, including null URLs for streams not yet created, and requests native snapshots rather than forcing unsupported full HD. It also works with process environment variables when no `.env` file exists.
+- Examine each hardware encoder at 720p with a target bitrate before the plugin selects it. If a driver accepts only encoding without a bitrate, the plugin uses the next encoder or software encoding. Live view does not fail.
+- Motion, smart-detection, smoke and carbon monoxide sensors are clear when Homebridge starts. Before, a sensor that was active at shutdown stayed "detected" until the next event (#66).
+- Snapshots and HomeKit writes do not wait behind slow requests (#67):
+  - A snapshot request has a 5-second limit and one retry.
+  - A write has a 7-second limit. A failed write shows an error in the Home app before HomeKit stops the request.
+  - Two snapshot requests for the same camera share one request to the console.
+  - If a snapshot fails, the plugin sends the last snapshot when it is less than 60 seconds old.
+  - A request that waits for a retry does not keep its position in the queue.
+  - The plugin does not retry a talkback or stream creation request after a timeout, because the console possibly created the session already.
+- If a different talkback session is open on the doorbell, the plugin writes one log message: "talkback busy". The plugin does not retry (#65).
+- When you drag the chime volume slider from off, the chime goes to the volume that you set. Before, the volume sometimes went to 100% (#68).
+- After a failed light, status LED or chime change, the tile does not stay on "No Response". Before, the tile showed "No Response" until the next device update (#68).
+- The plugin sends chime volume changes one at a time. While one change is in progress, the plugin keeps only the newest change. If a change waits too long, it fails immediately, before HomeKit stops the request (#68).
+- If the console refuses a WebSocket subscription, the plugin closes the connection immediately and connects again without delay. After an API key error, the plugin does not connect again (#69).
+- If FFmpeg stops unexpectedly during live view, the plugin tells HomeKit to stop the stream. It also stops the talkback encoder and closes the audio socket. Before, the Home app showed a frozen image (#70).
+- The plugin and the settings UI can read the certificate from a console with an IPv6 address in brackets, for example `[fd00::1]`. Before, the connection failed with `ENOTFOUND` (#72).
+- The plugin writes `config.json` to a temporary file and then renames it. A crash during the write does not damage `config.json`. If `config.json` is a symbolic link, the plugin updates the file that the link points to. The new file keeps the owner, group and permissions of the original file. If the plugin cannot keep them, it does not change `config.json` (#71).
+- After a request deadline ends, the plugin does not send the request again (#67).
+- The request time limit is now absolute. Before, a console that sent data slowly could keep a request open after its time limit (#67).
 
 ### Security
 
-- Development tooling only (not in the published package): an npm `override` moves `katex` to 0.18 (GHSA-238p-pmpm-9mq7, low). It reaches the lint setup through `@antfu/eslint-config` → `@eslint/markdown` → `micromark-extension-math`, whose latest release allows only `^0.16`. `npm audit` now reports no vulnerabilities.
+- The settings server examines the console address before it sends a request. It refuses an address with a path, query, fragment, credentials or spaces (#72).
+- The settings server and the plugin accept only printable ASCII characters in the API key. Before, a pasted zero-width space or dash caused an unclear network error. Error messages do not show the API key (#72).
+- The settings server gives a clear error when the console sends a response with an incorrect shape. Before, it gave an unclear error (#72).
 
 ### Changed
 
-- Refresh the vendored official Protect contract and generated schemas to 7.3.70, retaining historical hardware fixtures and guarded optional-field overrides.
-- Enforce zero-warning lint and the measured baseline coverage floors; CI uploads LCOV to Codecov with project and patch statuses.
-- Check manifest and lockfile version agreement before CI/release packaging, declare the HAP transport in plugin metadata, and prepare version 1.0.4.
-- Document the October 2026 Homebridge/Protect audit, TypeScript 7 compiler verification and the TypeScript 6 ESLint limitation. Correct development prerequisites and the unavailable Homebridge UI schema-check command.
-- Pull requests get path labels and at most one type label, `bug` or `enhancement`, from the shared tinkerologie PR labeler. Dependabot pull requests whose largest update is a patch or minor version merge automatically once the checks and commit statuses on their head commit have finished without a failure (a Codecov check that is still pending is not waited for; a Codecov failure blocks); majors, and pull requests with open review threads, stay for review.
-- Releases are split into two jobs. After the Test job's lint and tests, a read-only Package job installs dependencies, builds and packs the tarball; a separate Publish job, the only one with write access and an npm OIDC identity, publishes that tarball with lifecycle scripts disabled and creates the GitHub release. Dependency install scripts and the project's own build and test code therefore never run with publishing credentials, and the Publish job installs nothing (it checks that Node 24's bundled npm supports trusted publishing instead of upgrading npm). The Publish job checks npm again before publishing: a re-run after a partial failure skips the publish when npm already has that run's exact tarball and still creates the release; publishing runs one at a time, so a racing run that finds a different package on npm fails instead of publishing twice; and the tarball is kept for 7 days for such re-runs.
-- Release workflows hardened (least-privilege job permissions, no expressions in shell scripts, no persisted checkout credentials, no dependency caches); scheduled workflows run on Australia/Brisbane time. LICENSE now contains the complete Apache License 2.0 text.
-- Workflow layout tidied after the release hardening (no behaviour change): `permissions:` blocks moved back to the top of their workflow or job in `release.yml`.
-- Tinkerologie-Bot governance report updated to v1.4.3: an older run can no longer post a stale report after a newer run passed. Workflow formatting tidied.
-- Repository standardised to the tinkerologie layout (STANDARDS.md in tinkerologie/.github): workflows renamed to the standard set (CI, Validate, Release, PR Governance, ...), every action pinned to a commit SHA, shared Dependabot, `.editorconfig`, `.gitattributes` and `CODEOWNERS` files, and organization-wide labels and community files.
-- Tinkerologie-Bot's comment is now a readable "Pull request checklist": each problem is a numbered heading with plain-English guidance and its items listed underneath, and report updates for a pull request are serialised so an older run can never overwrite a newer one.
-- Contribution governance: issues without a `bug` or `enhancement` label are labeled automatically when their type can be determined (issues labeled `question`, `duplicate`, `invalid`, `wontfix`, or `no-type` are skipped), so CodeRabbit can plan them. Pull requests that conflict with the default branch are labeled, and their authors are notified in a comment. Stale issues and pull requests are labeled after 14 days without activity and closed 30 days later. PR governance now re-validates a human-authored, non-draft PR when a bot such as CodeRabbit edits its description, instead of skipping the check and reporting a pass, only maintainers with write access may use `None` instead of linking an issue, and a link to an issue that does not exist now fails the check.
-- Tinkerologie-Bot now posts one comment on pull requests that fail PR governance, listing every problem to fix, and updates it once they are fixed. PR governance runs from the default branch's workflow (`pull_request_target`), so a pull request cannot change its own check.
-- Issue templates now pass the repository's ESLint YAML rules, which were failing `npm run lint` on `main`.
+- `npm run lint` fails on all deprecated APIs. It uses the `no-deprecated` rule with type information from typescript-eslint. The audit found no deprecated API calls (#64).
+- Update the dependencies: Homebridge 2.5.0 (HAP-NodeJS 2.3.0), `@homebridge/plugin-ui-utils` 2.3.0, `ws` 8.23.0 and the development tools. `@types/node` stays on 22, the lowest supported Node.js version. TypeScript stays on 6.0.3, because typescript-eslint does not support TypeScript 7.
+- Add the [November 2026 compatibility audit](docs/compatibility-audit-2026-11.md).
+- All documentation follows ASD-STE100 Simplified Technical English.
+
+## [1.0.4] - 2026-10-28
+
+### Fixed
+
+- When a chime is muted, a normal device update or discovery no longer sets it to full volume. Unmute now restores the previous audible level.
+- Accessory names are limited to the HomeKit limit of 64 characters. The limit does not split surrogate pairs, and it keeps the package-camera suffix and the current accessory identities.
+- Declare the missing `nodemon` development dependency. The current rebuild/restart watch workflow does not change.
+- Device-subscription add, remove and bulk-ID frames now request a coalesced inventory refresh. Before, the plugin processed them as scalar updates. The current delayed-removal and shutdown safeguards keep the cached accessories.
+- The read-only Protect diagnostic uses the documented RTSPS GET response, including null URLs for streams that do not exist yet. It requests native snapshots and does not force unsupported full HD. It also uses process environment variables when there is no `.env` file.
+
+### Security
+
+- Development tooling only (not in the published package): an npm `override` moves `katex` to 0.18 (GHSA-238p-pmpm-9mq7, low). `katex` gets into the lint setup through `@antfu/eslint-config` → `@eslint/markdown` → `micromark-extension-math`. The latest release of `micromark-extension-math` permits only `^0.16`. `npm audit` now reports no vulnerabilities.
+
+### Changed
+
+- Update the vendored official Protect contract and the generated schemas to 7.3.70. The historical hardware fixtures and the guarded optional-field overrides stay.
+- Enforce zero-warning lint and the measured baseline coverage floors. CI sends LCOV to Codecov with project and patch statuses.
+- Before CI/release packaging, make sure that the manifest and lockfile versions agree. Declare the HAP transport in the plugin metadata. Prepare version 1.0.4.
+- Document the October 2026 Homebridge/Protect audit, the TypeScript 7 compiler verification and the TypeScript 6 ESLint limitation. Correct the development prerequisites and the unavailable Homebridge UI schema-check command.
+- The shared tinkerologie PR labeler gives pull requests path labels and a maximum of one type label, `bug` or `enhancement`.
+- Dependabot pull requests merge automatically if their largest update is a patch or minor version. The merge occurs when the checks and commit statuses on the head commit are complete and none failed. A pending Codecov check does not stop the merge, but a Codecov failure does. Major updates, and pull requests with open review threads, stay for review.
+- Releases now use two jobs. After the lint and tests of the Test job, a read-only Package job installs dependencies, builds and packs the tarball.
+- A separate Publish job publishes that tarball with lifecycle scripts disabled, and creates the GitHub release. Only this job has write access and an npm OIDC identity. Thus, dependency install scripts and the build and test code of the project never run with publishing credentials.
+- The Publish job installs nothing. It does not upgrade npm. It makes sure that the bundled npm of Node 24 supports trusted publishing.
+- The Publish job examines npm again before it publishes. A run can start again after a partial failure. If npm already has the exact tarball of that run, the job does not publish. It still creates the release. Only one publish runs at a time. Thus, if a parallel run finds a different package on npm, it fails and does not publish twice. The tarball is kept for 7 days for these runs.
+- Release workflows are hardened: least-privilege job permissions, no expressions in shell scripts, no persisted checkout credentials, and no dependency caches. Scheduled workflows use Australia/Brisbane time. LICENSE now contains the full Apache License 2.0 text.
+- After the release hardening, the workflow layout is tidied (no behaviour change). In `release.yml`, the `permissions:` blocks are at the top of their workflow or job again.
+- The Tinkerologie-Bot governance report is updated to v1.4.3. An older run can no longer post a stale report after a newer run passed. The workflow formatting is tidied.
+- The repository now uses the standard tinkerologie layout (STANDARDS.md in tinkerologie/.github). This includes:
+  - Workflows renamed to the standard set (CI, Validate, Release, PR Governance, ...)
+  - Each action pinned to a commit SHA
+  - Shared Dependabot
+  - `.editorconfig`, `.gitattributes` and `CODEOWNERS` files
+  - Labels and community files for the full organization
+- The Tinkerologie-Bot comment is now a clear "Pull request checklist". Each problem is a numbered heading with plain-English guidance, and its items are listed below the heading. The bot processes the report updates for a pull request one at a time. Thus, an older run can never overwrite a newer one.
+- Contribution governance:
+  - If automation can find the type of an issue that has no `bug` or `enhancement` label, it adds the label. CodeRabbit can then plan the issue. Automation does not process issues with the labels `question`, `duplicate`, `invalid`, `wontfix`, or `no-type`.
+  - Automation adds a label to pull requests that conflict with the default branch, and adds a comment to tell their authors.
+  - Automation adds a label to issues and pull requests that have no activity for 14 days, and closes them 30 days later.
+  - When a bot such as CodeRabbit edits the description of a human-authored, non-draft PR, PR governance now validates the PR again. Before, it did not do the check and reported a pass.
+  - Only maintainers with write access can use `None` instead of a link to an issue.
+  - A link to an issue that does not exist now fails the check.
+- When a pull request fails PR governance, Tinkerologie-Bot now adds one comment. The comment shows all the problems to correct. The bot updates the comment after the problems are corrected. PR governance runs from the workflow of the default branch (`pull_request_target`). Thus, a pull request cannot change its own check.
+- The issue templates now pass the ESLint YAML rules of the repository. Before, these rules made `npm run lint` fail on `main`.
 
 ## [1.0.3] - 2026-08-31
 
 ### Changed
 
 - Update repository URLs and documentation references to tinkerologie organization.
-- The vendored Protect API contract is regenerated from the **v7.2.105** OpenAPI 3.1 spec
-  (was 7.1.87). The runtime API surface is unchanged, so this is purely a schema refresh; it
-  removes the `/v1/cameras … did not match the expected schema` warning seen on consoles
-  already running 7.2.105.
-- Test fixtures are re-captured from a live 7.2.105 console and redacted (device GUIDs are
-  now hashed too). The captured camera set reflects current hardware settings — Sidegate, for
-  example, enabled only person detection, so tests assert the sensors actually built.
-- The schema generator (`scripts/gen-zod.mjs`) now understands the `pattern` keyword (used by
-  `posTransactionRequest.currency` in 7.2.105), maps it to a zod `.regex()`, and applies its
-  `OPTIONAL_OVERRIDES` only at top-level components so a required-but-omitted field on real
-  hardware (`camera.lcdMessage`) stays optional without leaking into nested objects.
-- `scripts/live-check.mjs`, `capture-events.mjs` and the new `capture-fixtures.mjs` read
-  `PROTECT_CERT_SHA256` from `.env` correctly (the key name contains digits; the previous
-  `^([A-Z_]+)=` pattern silently skipped it).
+- The vendored Protect API contract now comes from the **v7.2.105** OpenAPI 3.1 spec
+  (was 7.1.87). The runtime API surface did not change, so this is only a schema refresh. It
+  removes the `/v1/cameras … did not match the expected schema` warning on consoles
+  that already run 7.2.105.
+- The test fixtures are captured again from a live 7.2.105 console and redacted (device GUIDs are
+  now also hashed). The captured cameras show the current hardware settings. For example, Sidegate
+  enabled only person detection, so the tests assert the sensors that the plugin actually built.
+- The schema generator (`scripts/gen-zod.mjs`) now supports the `pattern` keyword (used by
+  `posTransactionRequest.currency` in 7.2.105). It changes the keyword to a zod `.regex()`.
+- The schema generator applies its `OPTIONAL_OVERRIDES` only at top-level components. Thus, a field
+  that is required but that real hardware omits (`camera.lcdMessage`) stays optional, and the override
+  does not apply to nested objects.
+- `scripts/live-check.mjs`, `capture-events.mjs` and the new `capture-fixtures.mjs` now read
+  `PROTECT_CERT_SHA256` from `.env` correctly. The key name contains digits, and the previous
+  `^([A-Z_]+)=` pattern ignored it without a message.
 
 ### Added
-- `scripts/capture-fixtures.mjs` — one-shot re-capture of the device fixtures from a live
-  console, so future Protect firmware bumps can refresh `test/fixtures` the way
-  `capture-events.mjs` already refreshes event fixtures.
+- `scripts/capture-fixtures.mjs` — captures the device fixtures again from a live
+  console in one step. Thus, after a Protect firmware update, you can refresh `test/fixtures`.
+  `capture-events.mjs` already refreshes the event fixtures in the same way.
 
 ## [1.0.2] - 2026-08-30
 
 ### Fixed
-- Motion now fires on every camera, not only the doorbell. Protect 7.2.105 emits classic
-  `motion` events only for doorbells; every other camera surfaces motion purely as smart-detect
-  events, which the plugin routed solely to the per-type Person/Vehicle/Animal sensors — so the
-  camera's Motion sensor, the tile HomeKit notifications, automations and HKSV key off, never
-  fired. A smart-detect event now drives the camera's Motion sensor alongside its per-type
-  sensors (verified against the live event stream: `smartDetectZone` frames for Driveway, Garage
-  and Backyard while the Motion sensors stayed dark). A smart-detect event whose detection types
-  cannot be read still triggers motion, and audio detections continue to drive only their
+- Motion now triggers on all cameras, not only on the doorbell. Protect 7.2.105 sends classic
+  `motion` events only for doorbells. All other cameras send motion only as smart-detect
+  events. The plugin sent these events only to the Person/Vehicle/Animal sensors for each type.
+  Thus, the Motion sensor of the camera never triggered. HomeKit notifications, automations and HKSV
+  use that sensor.
+- A smart-detect event now operates the Motion sensor of the camera and its sensors for each type.
+  The live event stream verified the problem: it sent `smartDetectZone` frames for Driveway, Garage
+  and Backyard, but the Motion sensors stayed off. A smart-detect event with detection types
+  that the plugin cannot read still triggers motion. Audio detections continue to operate only their
   smoke/CO sensors.
 
 ## [1.0.1] - 2026-08-06
 
 ### Security
-- Certificate pinning now verifies the console's certificate explicitly during the TLS
-  handshake instead of overriding `checkServerIdentity` with a no-op. The presented leaf
-  must match the trusted certificate byte for byte, so identity is enforced in two
-  independent layers (the pinned `ca` chain check, then the explicit compare) — resolving
-  the static-analysis findings that flagged the override as disabling validation. Behaviour
-  against real hardware is unchanged: the hostname mismatch of a UniFi console is still
-  tolerated, and a genuinely wrong certificate is now surfaced with an
-  `ERR_TLS_CERT_PIN_MISMATCH` code so the UI still reports it as a certificate error.
+- Certificate pinning now verifies the console certificate explicitly during the TLS
+  handshake. Before, it replaced `checkServerIdentity` with a no-op. The presented leaf
+  must be byte-for-byte identical to the trusted certificate. Thus, two
+  independent layers enforce the identity: the pinned `ca` chain check, then the explicit compare.
+  This resolves the static-analysis findings that identified the override as a disabled validation.
+- The behaviour with real hardware did not change. The plugin still accepts the hostname mismatch of a UniFi console.
+  For an incorrect certificate, the plugin now shows the
+  `ERR_TLS_CERT_PIN_MISMATCH` code. Thus, the UI still reports a certificate error.
 - The developer diagnostic scripts (`live-check`, `capture-events`) no longer trust a
-  console certificate on first sight before sending the API key: they require an
-  out-of-band `PROTECT_CERT_SHA256` fingerprint, printing the presented one when none is
-  configured so it can be verified and set. They also pin every request to the read
-  certificate and send SNI only for DNS hostnames.
+  console certificate at the first connection before they send the API key. They require an
+  out-of-band `PROTECT_CERT_SHA256` fingerprint. If no fingerprint is configured, they show the
+  presented fingerprint, so that you can verify and set it. They also pin each request to the read
+  certificate, and they send SNI only for DNS hostnames.
 
 ## [1.0.0] - 2026-08-06
 
 ### Changed
 
 - Update repository URLs and documentation references to tinkerologie organization.
-- TypeScript is pinned to the 6.x line (`^6.0.3`), matching what Homebridge 2.2.1 itself
-  builds against. npm's `latest` tag is now TypeScript 7, whose native compiler is too new
-  to assume Homebridge supports it; the caret keeps 7 out.
+- TypeScript is pinned to the 6.x line (`^6.0.3`). Homebridge 2.2.1 also builds with this line.
+  The npm `latest` tag is now TypeScript 7. Its native compiler is too new for the
+  assumption that Homebridge supports it. The caret prevents version 7.
 
 ### Added
-- Protect floodlights are exposed as a HomeKit Lightbulb with brightness plus a motion
-  sensor. On/off maps to the console's force-enable override, so toggling the light in
-  HomeKit never overwrites its configured motion or schedule mode; brightness maps to the
-  hardware's six LED levels. Both the light and its PIR update in realtime from the device
-  event stream, and a change made in the Protect app is reflected in HomeKit.
-- Chimes are exposed as a HomeKit Lightbulb whose brightness controls the ring volume
-  (0-100), turning off to silence the chime. The volume applies to every doorbell the
-  chime is paired to, preserving each ring's tone and repeat count, and updates in realtime
+- Protect floodlights show in HomeKit as a Lightbulb with brightness and a motion
+  sensor. On/off sets the force-enable override of the console. Thus, when you change the light in
+  HomeKit, its configured motion or schedule mode does not change. Brightness sets one of the
+  six LED levels of the hardware.
+- The light and its PIR update in real time from the device event stream. A change in the
+  Protect app shows in HomeKit.
+- Chimes show in HomeKit as a Lightbulb. Its brightness controls the ring volume
+  (0-100). Off silences the chime. The volume applies to all doorbells that are paired
+  to the chime, and each ring keeps its tone and repeat count. The volume updates in real time
   from the device event stream.
-- Motion sensors for every camera, driven by the live event stream rather than polling.
-  `GET /v1/events` does not exist in the Integration API, so a lost end-frame can never be
-  reconciled by a query — each active event carries a failsafe timer that clears it.
-- Smart-detection sensors per camera, one per detection type enabled in Protect: person,
-  vehicle, animal and package. A type that is supported but switched off produces no
-  sensor, and switching it off later removes exactly that sensor.
-- Smoke and carbon-monoxide sensors for cameras with audio detection enabled, mapped from
-  Protect's `smartAudioDetect` alarms.
-- A Doorbell service on cameras with a speaker, firing on a real `ring` event.
-- A status-LED switch on cameras that have one, reflecting `ledSettings.isEnabled` and
-  writing changes back to Protect. Changing the LED in the Protect app updates HomeKit,
-  and a failed write restores the switch rather than leaving it showing a state the
+- Motion sensors for all cameras. The live event stream operates them, not polling.
+  `GET /v1/events` does not exist in the Integration API. Thus, a query can never correct
+  a lost end-frame. Each active event has a failsafe timer that clears it.
+- Smart-detection sensors for each camera, one for each detection type that is enabled in Protect: person,
+  vehicle, animal and package. A supported type that is off has no
+  sensor. If you set a type to off later, the plugin removes only that sensor.
+- Smoke and carbon-monoxide sensors for cameras with audio detection enabled. The plugin
+  creates them from the `smartAudioDetect` alarms of Protect.
+- A Doorbell service on cameras with a speaker. A real `ring` event triggers it.
+- A status-LED switch on cameras that have a status LED. The switch shows `ledSettings.isEnabled` and
+  writes changes back to Protect. A change to the LED in the Protect app updates HomeKit.
+  If a write fails, the switch goes back to its previous state. It does not show a state that the
   console rejected.
-- Sensor state is reference-counted, so overlapping events cannot switch a sensor off
-  early. The console redelivers end-frames — observed up to three times with an identical
-  value — and duplicates are ignored.
-- Live streaming video quality is automatically selected based on HomeKit's resolution
-  request: 640×360 and below uses the low substream, 1280×720 uses medium, and anything
-  larger uses high. Per-camera quality override allows pinning a substream instead.
-- Live view transcoding now probes ffmpeg at startup and prefers Intel Quick Sync (QSV) or
-  VAAPI hardware encoding over the bundled software encoder, since every Protect stream is
-  HEVC and HomeKit only accepts H.264. Hardware encoding cuts CPU cost roughly 27× on
-  supported hosts; the chosen ffmpeg path and encoder are logged so a silent fallback to
-  software is visible rather than just running expensive.
-- RTSPS stream URLs are now cached per camera and quality for 5 minutes, creating a
-  stream on demand the first time a quality is requested. Protect reports no URL for a
-  quality until one has been created that way, so this also prevents ffmpeg from being
-  handed a stale, expired URL.
-- Live view now works end to end: HomeKit's stream request picks the substream, fetches the
-  RTSPS URL and transcodes it to H.264 for as long as the viewer is watching, and closing
-  the view kills the transcode.
-- Camera snapshots come straight from the console as JPEG — no ffmpeg is started for a
-  snapshot — and are cached for two seconds, so the Home app's frequent thumbnail polling
-  reaches the console once rather than once per tile. A failed snapshot is reported to
-  HomeKit with the reason only, never the underlying request details.
-- Concurrent live views are capped for the whole host rather than per camera: six with
-  hardware encoding, two with software. Five cameras therefore share one budget instead of
-  each getting its own, and a request past the cap is refused with a logged reason instead
-  of overloading the machine.
-- The package lens appears in HomeKit as its own camera, named "<camera> Package Camera",
-  for cameras whose payload reports the lens (`hasPackageCamera`) and whose owner switched
-  it on in the settings. It is bridged like every other accessory, is a camera and nothing
-  else — the package motion sensor stays on the main accessory, so existing automations are
-  untouched — and it advertises a range of 4:3 sizes and no audio. Its snapshots come from
-  the package channel, so the tile shows the downward view rather than the main lens.
-  Switching the setting off removes it again on the next discovery.
-- The package lens transcode is scaled to whatever size HomeKit asks for, and its frame
-  rate padded to the rate HomeKit negotiated, so every advertised size is one the plugin
-  actually delivers. That path decodes in software and scales before handing the frame to
-  the hardware encoder: scaling on the GPU fails outright on the reference host, and
-  decoding this lens in software costs almost nothing because the console serves it at
+- Sensor state uses a reference count. Thus, overlapping events cannot set a sensor to off
+  too early. The console sends end-frames again, up to three times with an identical
+  value. The plugin ignores the duplicates.
+- The plugin selects the live streaming video quality automatically from the HomeKit resolution
+  request: 640×360 and below uses the low substream, 1280×720 uses medium, and all
+  larger resolutions use high. A quality override for each camera can pin a substream.
+- At startup, live view transcoding now probes ffmpeg. It uses Intel Quick Sync (QSV) or
+  VAAPI hardware encoding before the bundled software encoder. All Protect streams are
+  HEVC, and HomeKit accepts only H.264. On supported hosts, hardware encoding decreases the CPU cost by approximately 27×.
+  The plugin logs the selected ffmpeg path and encoder. Thus, a silent fallback to
+  software shows in the log.
+- The plugin now keeps RTSPS stream URLs in a cache for 5 minutes, for each camera and quality. The first time
+  a quality is requested, the plugin creates a stream on demand. Protect reports no URL for a
+  quality until the plugin creates a stream in this way. This also prevents ffmpeg from
+  receiving a stale, expired URL.
+- Live view now operates from start to end. The HomeKit stream request selects the substream and gets the
+  RTSPS URL. The plugin transcodes it to H.264 while the viewer watches. When the viewer closes
+  the view, the plugin stops the transcode.
+- Camera snapshots come directly from the console as JPEG. The plugin does not start ffmpeg for a
+  snapshot. Snapshots stay in a cache for two seconds. Thus, the frequent thumbnail polling of the Home app
+  gets to the console one time, not one time for each tile. For a failed snapshot, the plugin reports
+  only the reason to HomeKit, never the request details.
+- The limit on concurrent live views applies to the full host, not to each camera: six with
+  hardware encoding, two with software. Thus, five cameras share one limit. Each camera does not
+  get its own limit. The plugin refuses a request above the limit and logs the reason.
+  This prevents an overload of the machine.
+- The package lens shows in HomeKit as a separate camera, with the name "<camera> Package Camera".
+  This applies to cameras whose payload reports the lens (`hasPackageCamera`), if the owner enabled
+  it in the settings. The plugin bridges it like all other accessories. It is only a camera.
+  The package motion sensor stays on the main accessory, so the current automations do not change.
+  It advertises a range of 4:3 sizes and no audio. Its snapshots come from
+  the package channel, so the tile shows the downward view, not the main lens.
+  If you disable the setting, the next discovery removes the camera.
+- The package lens transcode scales to the size that HomeKit requests. The plugin adds frames to get
+  the frame rate that HomeKit negotiated. Thus, the plugin actually supplies all advertised sizes.
+  That path decodes in software and scales before it sends the frame to
+  the hardware encoder. On the reference host, scaling on the GPU fails. Software
+  decoding of this lens costs almost nothing, because the console sends it at
   2 fps.
-- The Doorbell's package lens can now be streamed like any other camera. It has one stream
-  rather than a choice of substreams, and the console serves it at 1600×1200/2 fps rather
-  than 16:9/30 fps like every other lens, so ffmpeg duplicates frames up to the rate
-  HomeKit negotiated — without that, HomeKit can mistake a genuine 2 fps feed for a stalled
-  stream. It never carries audio, since the lens shares its microphone with the main camera
-  and a second identical audio source helps no one.
-- Live view can carry audio, sent as its own stream alongside the video and transcoded to
-  Opus, which HomeKit accepts and which the hardware-capable ffmpeg can encode. AAC-ELD is
-  used instead when a build has `libfdk_aac` but not `libopus`. Audio is **off by default
-  and opt-in per camera** — recording audio is legally more restricted than video in many
-  places, and an outdoor camera hears passers-by who have not consented. If ffmpeg has
-  neither encoder the plugin says so once and streams video only, rather than producing a
-  stream HomeKit cannot play.
-- Two-way talkback on cameras with a speaker: pressing the microphone button in the Home
-  app's live view now plays your voice through the camera. It is **off by default and
-  opt-in per camera**, offered in the settings UI only for hardware that reports a
-  speaker, and **enabling it needs a restart** — the same one Homebridge already prompts
-  for when settings are saved. Talkback is independent of the audio setting: turning it on
-  does not start sending the camera's own microphone to HomeKit, and turning audio on does
-  not enable talkback. Nothing is sent to the camera until you actually speak.
-- Every camera now appears in the Home app as a camera: live view and snapshots are wired
-  to HomeKit, bridged like every other accessory so a child bridge still holds the whole
-  console under one pairing. The doorbell keeps the single Doorbell service the event
-  pipeline drives — attaching live view does not add a second one.
-- The settings UI now offers both new per-camera controls, so neither needs `config.json` to
-  be edited by hand: a live-view quality selector labelled with the real substream
-  resolutions (auto, 2688×1512, 1280×720, 640×360) and an audio toggle, offered only for a
-  camera that reports a microphone. The audio toggle says so in its own label: **turning
-  audio on takes effect after a restart**, the one Homebridge already prompts for when
-  settings are saved. HomeKit is told which audio codecs a camera offers when that camera is
-  published, and HAP provides no way to change that afterwards. Turning audio back off
-  applies to the next live view immediately.
-- New settings: `maxStreams` caps concurrent live views for the whole host (default six on
-  hardware encoding, two on software), `ffmpegPath` points at a specific ffmpeg binary, and
-  each camera takes `quality` (`auto`, `high`, `medium`, `low`; `auto` by default) and
-  `audio` (off by default).
-- The settings UI now also offers the two host-wide settings — the maximum number of
-  concurrent live views and the ffmpeg path — so nothing this plugin supports needs
-  `config.json` to be edited by hand. Clearing either field hands the decision back to the
-  plugin rather than storing a blank.
-- The README documents how to get hardware transcoding working: passing `/dev/dri` into the
-  container, the render-group permission, which VA-API driver package carries the H.264
-  encode entrypoint, and the measured cost of not having it (20 s of 2688×1512 costs 1.79 s
-  of CPU via VAAPI against 49.1 s via libx264, about 27×).
-- A camera configured for audio on an ffmpeg that can encode neither codec HomeKit accepts
-  now says so in the log at startup, naming the binary, instead of streaming silently
-  without audio.
-- ffmpeg is probed once at startup rather than per camera. If no usable ffmpeg is found the
-  plugin says so and carries on: sensors, the LED switch and the doorbell all keep working
-  without live view instead of the whole platform failing to load.
-- Shutting Homebridge down stops every running transcode. A stranded ffmpeg would otherwise
-  hold a 4 MP HEVC decode open for as long as the host stayed up.
-- ffmpeg processes for live view are now supervised: started, tracked, and killed on
-  teardown so a dropped viewer can never leave a transcode running indefinitely. ffmpeg's
-  own failure output is redacted before it is ever logged, since the command line it echoes
-  on error contains the RTSPS stream's auth token.
-- New per-camera setting: `packageCamera`, off by default. The settings UI offers it only
-  for a camera the console reports a package lens on, and its label states plainly that the
-  console serves that lens at 2 fps — enabling it adds a second HomeKit accessory for one
-  physical device, so nobody should be surprised by either consequence after the fact.
-- HomeKit Secure Video recording, off by default per camera. A camera with recording
-  enabled runs one continuous ffmpeg — RTSPS in, fragmented MP4 out — feeding a 16-fragment
-  in-memory prebuffer, so a clip starts *before* the motion that triggered it rather than
-  after. Measured on the real console at 7–9% of one core per camera (VAAPI H.264 plus
-  ffmpeg's native AAC encoder) on the 1280×720 medium substream that recording uses —
-  about half a core across five cameras.
-- A clip opens with only as much pre-roll as HomeKit negotiated. The prebuffer *holds*
-  16 fragments as headroom, because a fragment runs long when a keyframe arrives late,
-  but sending all of them meant handing over ~64 seconds of video at the head of a clip
-  whose advertised `prebufferLength` promised 4. Verified on real hardware: the
-  controller took the oversized pre-roll and closed the stream in the same second,
-  before a single live fragment. With the negotiated amount it records normally.
-- Recording advertises exactly one resolution, 1280×720, and both the advertisement and
-  the encoder's fallback read the same constant. They had drifted: the advertised ladder
-  was trimmed to 720p while the encoder still fell back to the 2688×1512 high substream
-  whenever HomeKit had not sent a configuration before the encoder started, so a camera
-  recorded four times the pixels it had promised. There is no scale filter in the
-  recording path, so an advertised size is only honest if a substream serves it exactly.
-- Motion is logged when it fires, naming the camera. It is what triggers every recording
-  and it previously reached HomeKit in silence, so a walk past a camera that produced no
-  clip left nothing in the log to say whether motion had fired or HomeKit had ignored it.
-  The clear, and every non-motion sensor, stay on the debug channel.
-- Recording never consumes a live-view stream slot. The `maxStreams` cap exists to protect
-  interactive viewing, and a recording process is not an interactive viewer — but the two
-  do share the GPU.
-- Recording uses H.264 with AAC-LC. HomeKit Secure Video does not permit Opus, which live
-  view prefers on this host, so the two pipelines deliberately differ.
-- A doorbell press is advertised as a recording trigger alongside motion. **Apple's
-  HomeHubs are not currently known to act on it:** hap-nodejs documents that HomeHubs never
-  enable Doorbell triggers as of iOS 15-16 and believes the gap is on Apple's side. The
-  advertisement is correct and costs nothing, so it will work if and when Apple enables it —
-  but today, motion is what starts a clip.
-- The settings UI is rebuilt on Homebridge's own injected Bootstrap 5 theme, replacing the
-  hand-rolled CSS. It now has four tabs — Connection, Defaults, Devices, Help — with a
-  searchable device list beside a detail pane, real toggle switches instead of 13 px
-  checkboxes, and settings grouped rather than laid out as one flat grid. Because global
-  and per-device settings now live in different places, it is never ambiguous which one is
-  being edited. Dark mode comes from Homebridge's theme rather than hardcoded colours.
-- Every per-device setting shows whether it is inherited or overridden, and an overridden
-  one can be reset to the inherited value.
-- Saves are debounced by one second, so flipping several toggles in a row writes
-  `config.json` once instead of once per click. Settings that genuinely require a restart
-  say so explicitly, rather than every change surfacing Homebridge's restart banner.
-- The Defaults tab now carries the per-camera defaults every device inherits — whether new
-  devices are exposed, the live view quality and whether recording is on — alongside the
-  host-wide settings. The default/overridden badge on each device now points at values the
-  UI itself can change, rather than ones only a hand-edited `config.json` could reach.
-- The Help tab documents what each setting does, which ones need a restart, how hardware
-  transcoding is chosen and what to check when it falls back to software, and that
-  recording does not use a live-view slot but does share the GPU with one.
-- A new iCloud tier setting (50 GB / 200 GB / 2 TB+, defaulting to 200 GB) drives an
-  advisory warning when more cameras have recording enabled than the tier allows — five on
-  200 GB, one on 50 GB. It names the tier and both counts, and never blocks the setting:
-  the plugin cannot see your subscription, and refusing a setting on a guess would be worse
-  than a warning you can ignore.
+- You can now stream the package lens of the Doorbell like all other cameras. It has one stream,
+  not a choice of substreams. The console sends it at 1600×1200/2 fps. All other lenses use
+  16:9/30 fps. Thus, ffmpeg duplicates frames up to the rate that
+  HomeKit negotiated. Without this, HomeKit can think that a real 2 fps feed is a stalled
+  stream. This stream never has audio. The lens uses the same microphone as the main camera,
+  and a second identical audio source has no value.
+- Live view can include audio. The plugin sends audio as a separate stream with the video and transcodes it to
+  Opus. HomeKit accepts Opus, and the hardware-capable ffmpeg can encode it. If a build has `libfdk_aac` but not `libopus`,
+  the plugin uses AAC-ELD. Audio is **off by default
+  and you must enable it for each camera**. In many locations, the law gives more restrictions for audio recording than for video.
+  Also, an outdoor camera records people who walk past and who did not give consent. If ffmpeg has
+  neither encoder, the plugin tells you one time and streams only video. It does not make a
+  stream that HomeKit cannot play.
+- Two-way talkback on cameras with a speaker. When you push the microphone button in the live view of the Home
+  app, the camera plays your voice. Talkback is **off by default, and you must enable it for each
+  camera**. The settings UI shows it only for hardware that reports a
+  speaker. **Talkback starts only after a restart**. Homebridge already asks
+  for this restart when you save the settings.
+- Talkback is independent of the audio setting. When you enable talkback,
+  the plugin does not send the microphone of the camera to HomeKit. When you enable audio, talkback stays disabled.
+  The plugin sends nothing to the camera until you speak.
+- All cameras now show in the Home app as cameras. Live view and snapshots connect
+  to HomeKit. The plugin bridges cameras like all other accessories, so a child bridge still holds the full
+  console under one pairing. The doorbell keeps the one Doorbell service that the event
+  pipeline operates. Live view does not add a second Doorbell service.
+- The settings UI now shows the two new per-camera controls. Thus, you do not have to edit `config.json`
+  manually for them:
+  - A live-view quality selector. Its labels show the real substream
+    resolutions (auto, 2688×1512, 1280×720, 640×360).
+  - An audio toggle. The UI shows it only for a camera that reports a microphone.
+- The label of the audio toggle tells you that **audio starts only after a restart**.
+  Homebridge already asks for this restart when you save the settings. When HomeKit publishes a camera,
+  HomeKit gets the audio codecs of that camera. HAP cannot change them after that.
+  When you disable audio, the change applies immediately to the next live view.
+- New settings:
+  - `maxStreams` sets the limit on concurrent live views for the full host (default six with
+    hardware encoding, two with software).
+  - `ffmpegPath` sets a specific ffmpeg binary.
+  - Each camera has `quality` (`auto`, `high`, `medium`, `low`; `auto` by default) and
+    `audio` (off by default).
+- The settings UI now also shows the two host-wide settings: the maximum number of
+  concurrent live views and the ffmpeg path. Thus, you do not have to edit `config.json` manually
+  for any setting that this plugin supports. If you clear one of these fields, the plugin makes the
+  decision. The plugin does not keep a blank value.
+- The README tells you how to make hardware transcoding operate:
+  - Give `/dev/dri` to the container.
+  - Set the render-group permission.
+  - Use the VA-API driver package that has the H.264 encode entrypoint.
+  - The measured cost without hardware transcoding: 20 s of 2688×1512 costs 1.79 s
+    of CPU with VAAPI and 49.1 s with libx264, approximately 27×.
+- If a camera has audio enabled, and ffmpeg cannot encode a codec that HomeKit accepts,
+  the plugin now tells you in the log at startup. The message gives the name of the binary. Before, the plugin
+  streamed without audio and without a message.
+- The plugin probes ffmpeg one time at startup, not for each camera. If the plugin finds no usable ffmpeg,
+  it tells you and continues. Sensors, the LED switch and the doorbell continue to operate
+  without live view. The full platform does not fail to load.
+- When Homebridge shuts down, the plugin stops all running transcodes. Without this, a stranded ffmpeg
+  keeps a 4 MP HEVC decode open until the host stops.
+- The plugin now supervises the ffmpeg processes for live view. It starts them, tracks them, and stops them at
+  teardown. Thus, a viewer that disconnects can never leave a transcode that runs without a limit.
+  The plugin redacts the failure output of ffmpeg before it logs the output. On an error, ffmpeg shows the command line,
+  and the command line contains the auth token of the RTSPS stream.
+- New per-camera setting: `packageCamera`, off by default. The settings UI shows it only
+  for a camera that has a package lens, as reported by the console. Its label tells you clearly that the
+  console sends that lens at 2 fps. When you enable it, the plugin adds a second HomeKit accessory for one
+  physical device. The label tells you about the two results before you enable the setting.
+- HomeKit Secure Video recording, off by default for each camera. For each camera with recording
+  enabled, the plugin runs one continuous ffmpeg: RTSPS in, fragmented MP4 out.
+  This ffmpeg fills a 16-fragment prebuffer in memory. Thus, a clip starts *before* the motion that triggered it,
+  not after.
+- On the real console, recording used 7–9% of one core for each camera (VAAPI H.264 plus
+  the native AAC encoder of ffmpeg). Recording uses the 1280×720 medium substream.
+  This is approximately half a core for five cameras.
+- A clip starts with only the pre-roll that HomeKit negotiated. The prebuffer *holds*
+  16 fragments as headroom, because a fragment is longer when a keyframe arrives late.
+  Before, the plugin sent all 16 fragments. This put approximately 64 seconds of video at the start of a clip,
+  but the advertised `prebufferLength` was 4.
+- A test on real hardware verified the problem: the controller accepted the oversized pre-roll and closed the stream in the same second,
+  before the first live fragment. With the negotiated pre-roll, recording operates correctly.
+- Recording advertises only one resolution, 1280×720. The advertisement and
+  the encoder fallback read the same constant. Before, the two values were different. The advertised resolutions
+  were limited to 720p. But if HomeKit did not send a configuration before the encoder started, the encoder used
+  the 2688×1512 high substream. Thus, a camera recorded four times the pixels that it advertised.
+  The recording path has no scale filter. Thus, an advertised size is correct only if a substream supplies exactly that size.
+- The plugin logs motion when it triggers, with the name of the camera. Motion triggers all recordings.
+  Before, motion got to HomeKit without a log message. If a person walked past a camera and no
+  clip was made, the log did not show if motion triggered or if HomeKit ignored it.
+  The clear event, and all sensors that are not motion sensors, stay on the debug channel.
+- Recording never uses a live-view stream slot. The `maxStreams` limit protects
+  interactive viewing, and a recording process is not an interactive viewer. But the two
+  use the same GPU.
+- Recording uses H.264 with AAC-LC. HomeKit Secure Video does not permit Opus. Live
+  view uses Opus on this host. Thus, the two pipelines are different by design.
+- The plugin advertises a doorbell push as a recording trigger, together with motion. **At this time, Apple
+  HomeHubs are not known to use it:** hap-nodejs documents that HomeHubs never
+  enable Doorbell triggers as of iOS 15-16. Hap-nodejs thinks that the gap is on the Apple side. The
+  advertisement is correct and costs nothing. Thus, it will operate if Apple enables it.
+  But today, only motion starts a clip.
+- The settings UI now uses the injected Bootstrap 5 theme of Homebridge. It replaces the
+  hand-rolled CSS. It has four tabs: Connection, Defaults, Devices, Help. A
+  searchable device list is adjacent to a detail pane. It has real toggle switches, not 13 px
+  checkboxes. Settings are in groups, not in one flat grid. Global
+  and per-device settings are in different locations. Thus, it is always clear which setting you
+  edit. Dark mode comes from the Homebridge theme, not from hardcoded colours.
+- Each per-device setting shows if it is inherited or overridden. You can reset an overridden
+  setting to the inherited value.
+- Saves are debounced by one second. Thus, when you change some toggles quickly, the plugin writes
+  `config.json` one time, not one time for each click. Only settings that really require a restart
+  tell you so. Not every change shows the restart banner of Homebridge.
+- The Defaults tab now contains the per-camera defaults that all devices inherit, together with the
+  host-wide settings. These defaults are: the exposure of new devices, the live view quality, and the recording setting.
+  The default/overridden badge on each device now refers to values that the
+  UI can change. Before, it referred to values that you could change only in `config.json`.
+- The Help tab documents:
+  - What each setting does
+  - Which settings need a restart
+  - How the plugin selects hardware transcoding, and what to examine when it uses software
+  - That recording does not use a live-view slot, but uses the same GPU as live view
+- A new iCloud tier setting (50 GB / 200 GB / 2 TB+, default 200 GB) gives an
+  advisory warning. The warning shows when more cameras have recording enabled than the tier permits. The tier permits five on
+  200 GB, and one on 50 GB. The warning gives the tier and the two counts. It never blocks the setting.
+  The plugin cannot see your subscription. A refused setting based on a guess is worse
+  than a warning that you can ignore.
 
 ### Fixed
-- The video size and frame rate a controller negotiates are now validated before they
-  reach ffmpeg. HAP does not check a controller's selection against the resolutions the
-  accessory advertised, so a malformed one asking for 0 fps produced `-r 0`, which ffmpeg
-  refuses outright, and an absurd size produced a scale filter that allocated before it
-  failed. Both are now clamped into the advertised range rather than rejected, so the
-  viewer gets a slightly different picture instead of no picture.
-- An ffmpeg process whose kill signal was not delivered is no longer dropped. It used to
-  be removed from the session map regardless, leaving nobody able to retry: the orphan
-  kept running, held a decode open, and kept its slot in the host-wide stream cap for the
-  rest of the uptime, so live views were eventually refused for corpses. A process that
-  survives its kill now stays tracked until it genuinely exits.
-- The package camera would not stream at all: HomeKit showed "No Response" for every live
-  view, with nothing logged anywhere to explain it. It had been advertising a single
-  1600×1200 at 15 fps, which HomeKit rejects on two counts — every advertised stream must
-  offer at least 24 fps, and 1600×1200 is not one of the 4:3 sizes it accepts. Nothing in
-  the stack validates this, so the refusal was silent: HomeKit simply never asked for
-  video, and no request ever reached the plugin. It now advertises a range of accepted 4:3
-  sizes at 30 fps, and scales the picture to whichever one HomeKit picks.
-- A package camera already in HomeKit is no longer unregistered when the plugin starts
-  without a usable ffmpeg. It used to be removed immediately — not after the usual
-  confirmation window — so a single restart with ffmpeg temporarily missing permanently
-  lost the accessory's room, scenes and automations. It is now kept without live view,
-  exactly as the main cameras already were. Switching the setting off, or the lens
-  genuinely disappearing, still removes it at once.
-- The package camera reports its manufacturer, model and serial number to HomeKit
-  instead of showing the placeholder values on its tile. Its serial is distinct from the
-  main camera's, since the two are separate accessories for one physical device.
-- Live view SSRCs are now positive signed 32-bit values. The previous range reached
-  0x100000000, which HomeKit and ffmpeg both reject, so a fraction of streams simply never
-  loaded — intermittently, and with nothing in the log to explain it.
-- Every hardware encoder is now trial-encoded before the plugin commits to it, and a
-  candidate that fails falls through to the next one rather than to software. Being listed
-  by `ffmpeg -encoders` only means the build was compiled with it, not that the container
-  can open `/dev/dri`. On the reference console `/usr/bin/ffmpeg` lists both QSV and VAAPI,
-  QSV cannot create its device, and VAAPI works — so the plugin now runs VAAPI there, where
-  trusting the listing would have failed every live view and demoting on the first failure
-  would have put a perfectly good GPU on software encoding at roughly 27× the CPU.
-- A live view requested while Homebridge was shutting down can no longer start an ffmpeg
-  after the shutdown handler has already run. Such a process was in no map and nothing would
-  ever have killed it.
-- A shutdown now stops every remaining live view, the event bus and the failsafe timers even
-  if stopping one camera throws.
-- An ffmpeg that dies between being spawned and being tracked is reported to HomeKit as a
-  failed start instead of being logged as "Live view started".
-- A live view whose local RTP port cannot be reserved now fails instead of leaving HomeKit
-  waiting on a request that never gets an answer.
-- Concurrent live views of the same camera and quality now share a single request to the
-  console instead of each creating their own RTSPS stream.
-- Discovery no longer restarts the WebSocket subscriptions when Homebridge shuts down while
-  accessories are being reconciled.
+- The plugin now validates the video size and frame rate that a controller negotiates before they
+  get to ffmpeg. HAP does not compare the selection of a controller with the resolutions that the
+  accessory advertised. Thus, a malformed selection for 0 fps caused `-r 0`, which ffmpeg
+  refuses. A very large size caused a scale filter that allocated memory before it
+  failed. The plugin now clamps both values into the advertised range. It does not reject them. Thus, the
+  viewer gets a slightly different picture, not no picture.
+- The plugin no longer drops an ffmpeg process when the kill signal was not delivered. Before, the plugin always
+  removed the process from the session map, so nothing could try again. The orphan process
+  continued to run, kept a decode open, and kept its slot in the host-wide stream limit until the
+  host stopped. Thus, the plugin eventually refused live views because of dead processes. A process that
+  is not stopped by its kill signal now stays tracked until it actually stops.
+- The package camera did not stream. HomeKit showed "No Response" for all live
+  views, and the log showed no reason. The camera advertised one size,
+  1600×1200 at 15 fps. HomeKit rejects this for two reasons: each advertised stream must
+  supply a minimum of 24 fps, and 1600×1200 is not one of the 4:3 sizes that HomeKit accepts.
+- Nothing in the stack validates this, so the refusal had no message. HomeKit did not request
+  video, and no request got to the plugin. The camera now advertises a range of accepted 4:3
+  sizes at 30 fps, and scales the picture to the size that HomeKit selects.
+- If the plugin starts without a usable ffmpeg, it no longer unregisters a package camera that is already in HomeKit.
+  Before, the plugin removed it immediately, not after the usual
+  confirmation window. Thus, one restart without ffmpeg permanently
+  removed the room, scenes and automations of the accessory. The plugin now keeps it without live view,
+  the same as the main cameras.
+- If you disable the setting, or if the lens really disappears, the plugin still removes the package camera immediately.
+- The package camera reports its manufacturer, model and serial number to HomeKit.
+  Before, its tile showed placeholder values. Its serial number is different from the serial number of the
+  main camera, because the two are separate accessories for one physical device.
+- Live view SSRCs are now positive signed 32-bit values. The previous range went up to
+  0x100000000, and HomeKit and ffmpeg both reject that value. Thus, some streams did not
+  load. This occurred intermittently, and the log showed no reason.
+- The plugin now does a trial encode with each hardware encoder before it selects that encoder. If a
+  candidate fails, the plugin tries the next candidate, not software. If `ffmpeg -encoders` shows an encoder,
+  it only means that the build includes it. It does not mean that the container
+  can open `/dev/dri`.
+- On the reference console, `/usr/bin/ffmpeg` shows QSV and VAAPI. QSV cannot create its device,
+  and VAAPI operates. Thus, the plugin now uses VAAPI there. If the plugin trusted the list,
+  all live views would fail. If the plugin went to software after the first failure, a good GPU
+  would not be used, and software encoding uses approximately 27× the CPU.
+- A live view request during the Homebridge shutdown can no longer start an ffmpeg
+  after the shutdown handler ran. Such a process was in no map, and nothing would
+  ever have stopped it.
+- A shutdown now stops all remaining live views, the event bus and the failsafe timers, even
+  if the stop of one camera throws an error.
+- If an ffmpeg stops after it starts but before the plugin tracks it, the plugin now reports a
+  failed start to HomeKit. Before, the log showed "Live view started".
+- If the plugin cannot reserve the local RTP port of a live view, the live view now fails.
+  Before, HomeKit waited for a response that never came.
+- Concurrent live views of the same camera and quality now share one request to the
+  console. Before, each live view created its own RTSPS stream.
+- If Homebridge shuts down while discovery reconciles accessories, discovery no longer restarts the WebSocket subscriptions.
 
-- Service removal is floored on an understood device payload. The client returns the raw
-  payload when schema validation fails, so a single firmware field rename could otherwise
-  have stripped every smart-detect sensor, the doorbell and the LED switch from every
-  camera. A payload that cannot be understood now removes nothing.
-- Services created by other modules are left alone during reconciliation instead of being
-  torn down as unrecognised.
-- `ConfiguredName` is written once at service creation, so a rename in the Home app
-  survives later discovery cycles.
-- Documented iCloud limits for HomeKit Secure Video were wrong. Apple caps by camera
-  count, not storage: 50 GB supports one camera, 200 GB supports five, and 2 TB and above
-  are unlimited. Footage does not count against the iCloud storage quota. HKSV remains off
-  by default because the 50 GB tier allows a single camera.
+- Service removal now requires a device payload that the plugin understands. When schema validation fails,
+  the client returns the raw payload. Thus, one renamed firmware field could
+  remove all smart-detect sensors, the doorbell and the LED switch from all
+  cameras. A payload that the plugin cannot understand now removes nothing.
+- During reconciliation, the plugin no longer removes services that other modules created as
+  unrecognised services.
+- The plugin writes `ConfiguredName` one time, when it creates the service. Thus, a name change in the Home app
+  stays after later discovery cycles.
+- The documented iCloud limits for HomeKit Secure Video were incorrect. Apple sets the limit by the number of cameras,
+  not by storage: 50 GB supports one camera, 200 GB supports five, and 2 TB and above
+  have no limit. Footage does not count against the iCloud storage quota. HKSV stays off
+  by default, because the 50 GB tier permits only one camera.
 
 ### Security
-- Talkback's per-session SRTP key could previously reach the log: ffmpeg echoes its full
-  command line on failure, and it echoes the offending line of an SDP it cannot parse.
-  Both paths are now redacted before anything is logged.
-- ffmpeg's error output is redacted a whole token at a time, so a stream URL split across
-  two reads of the pipe — its `rtsps://` scheme arriving separately from its auth token —
-  is still redacted. Redaction had been applied per read, which cannot match a URL that
-  spans two of them.
-- A failure fetching a stream URL is reported as a fresh error carrying the message only.
-  Re-throwing the client's own error handed `util.inspect` a request context, which is the
-  path that has leaked the API key out of this codebase before.
-- The console's certificate is now pinned instead of TLS verification being disabled.
-  On the first connection the plugin reads the certificate, stores it in `config.json`
-  as `consoleCert` and logs its SHA-256 fingerprint; every later REST request and both
-  WebSocket subscriptions are verified against it. Only the hostname check is skipped
-  (the certificate is issued for the console's hostname while the plugin connects by IP)
-  — certificate identity is enforced, so another host on the LAN can no longer
-  impersonate the console and capture the API key.
-- A changed certificate fails closed: the plugin refuses to connect, and the log and the
-  settings UI both show the trusted and presented fingerprints plus how to re-trust it
-  deliberately. Nothing is ever re-trusted silently.
+- Before, the SRTP key of each talkback session could get into the log. On a failure, ffmpeg shows its full
+  command line. It also shows the bad line of an SDP that it cannot parse.
+  The plugin now redacts both outputs before it logs them.
+- The plugin redacts the error output of ffmpeg one full token at a time. Thus, the plugin redacts a stream URL
+  even when it arrives in two reads of the pipe, with the `rtsps://` scheme separate from the auth token.
+  Before, the plugin redacted each read separately, and this cannot find a URL that
+  is in two reads.
+- When the plugin cannot get a stream URL, it reports a new error that contains only the message.
+  Before, the plugin threw the error of the client again. This gave a request context to `util.inspect`. In the past, the API key
+  of this codebase leaked through this path.
+- The plugin now pins the console certificate. Before, TLS verification was disabled.
+  At the first connection, the plugin reads the certificate, keeps it in `config.json`
+  as `consoleCert` and logs its SHA-256 fingerprint. The plugin verifies all later REST requests and the two
+  WebSocket subscriptions against this certificate.
+- The plugin does not do the hostname check, because the console certificate is for the hostname
+  of the console, but the plugin connects by IP. The plugin enforces the certificate identity. Thus, a different host on the LAN can no longer
+  act as the console and capture the API key.
+- If the certificate changes, the plugin does not connect. The log and the
+  settings UI show the trusted and the presented fingerprints. They also tell you how to trust the new certificate
+  deliberately. The plugin never trusts a certificate again without a message.
 
 ### Known limitations
-- Recording audio follows the plugin's own audio setting, not the Home app's "recording
-  audio" toggle. The `RecordingAudioActive` characteristic is never read: hap-nodejs does
-  not push its value to a recording delegate, and reading it needs the `CameraController`
-  instance the plugin currently discards. Two consequences — hap-nodejs defaults that
-  characteristic to off, so a camera with audio enabled records clips *with* sound while
-  the Home app reports recording audio as off; and changing it in the Home app does
-  nothing. Change it in the plugin settings instead.
-- A doorbell press does not start a recording in practice, despite being advertised as a
-  trigger. See above: hap-nodejs documents this as an Apple-side gap.
-- The prebuffer runs a continuous ffmpeg per recording camera because the Integration API
-  exposes no push channel for video. Plugins built on UniFi's private livestream WebSocket
-  avoid that cost, but that channel requires a username/password UniFi OS login, which this
-  plugin deliberately does not implement — it is API-key only. The continuous-ffmpeg model
-  is a direct and accepted consequence of that choice.
+- Recording audio uses the audio setting of the plugin, not the "recording
+  audio" toggle of the Home app. The plugin never reads the `RecordingAudioActive` characteristic: hap-nodejs does
+  not send its value to a recording delegate. To read it, the plugin needs the `CameraController`
+  instance, which the plugin currently discards.
+- This has two results. Hap-nodejs sets that
+  characteristic to off by default. Thus, a camera with audio enabled records clips *with* sound, but
+  the Home app shows recording audio as off. Also, a change in the Home app has
+  no effect. Change the setting in the plugin settings.
+- A doorbell push does not start a recording in practice, but the plugin advertises it as a
+  trigger. Refer to the related entry above: hap-nodejs documents this as a gap on the Apple side.
+- The prebuffer runs a continuous ffmpeg for each recording camera, because the Integration API
+  has no push channel for video. Plugins that use the private livestream WebSocket of UniFi
+  do not have that cost. But that channel requires a UniFi OS login with a username and password. This
+  plugin deliberately does not use this login. It uses only an API key. The continuous-ffmpeg model
+  is a direct and accepted result of that decision.
 
 ## [0.1.0] - 2026-07-31
 
-Foundation release. Discovers devices and validates connectivity; accessory services
-arrive in a later release.
+Foundation release. This release discovers devices and validates the connection. Accessory services
+come in a later release.
 
 ### Added
-- Self-contained UniFi Protect Integration API client, authenticated by API key only —
-  no UniFi username or password is ever requested or stored.
+- Self-contained UniFi Protect Integration API client. It uses only an API key for authentication.
+  It never requests or keeps a UniFi username or password.
 - Zod schemas generated from the vendored UniFi Protect 7.1.87 OpenAPI 3.1 specification.
-- Real-time device and event WebSocket subscriptions with exponential-backoff reconnect
-  and a full REST resync after every reconnect. No polling.
+- Real-time device and event WebSocket subscriptions. They reconnect with exponential backoff,
+  and do a full REST resync after each reconnect. No polling.
 - Homebridge v2 dynamic platform with device discovery and accessory cache reconciliation.
-  All accessories are bridged, so a child bridge holds every device under one pairing.
-- Custom configuration UI with live device discovery, connection testing, and per-device
-  settings. No manual `config.json` editing is required.
-- Request throttling with rate-limit backoff, honouring `Retry-After`.
+  The plugin bridges all accessories, so a child bridge holds all devices under one pairing.
+- Custom configuration UI with live device discovery, connection tests, and settings for each
+  device. You do not have to edit `config.json` manually.
+- Request throttling with rate-limit backoff. The client obeys `Retry-After`.
 - `npm run live-check`, a manual smoke test against real hardware.
 
 ### Known limitations
-- No recording-mode switch — `recordingSettings` is absent from the Integration API.
+- No recording-mode switch — `recordingSettings` is not in the Integration API.
 - No privacy mode or privacy zone control.
 - No event thumbnail download.

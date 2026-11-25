@@ -33,14 +33,16 @@ const frames = []
 // never disabled on them. checkServerIdentity replaces the hostname check ONLY.
 const pinned = await new Promise((resolve, reject) => {
   const url = new URL(`https://${host}`)
+  // WHATWG keeps IPv6 brackets in `hostname`; the resolver and isIP need them gone.
+  const hostname = url.hostname.replace(/^\[(.*)\]$/, '$1')
   const socket = connect({
-    host: url.hostname,
+    host: hostname,
     port: Number(url.port || 443),
     // SNI for a DNS name so a console fronting several certs presents the right
     // one; omitted for an IP literal, where SNI is invalid.
-    servername: isIP(url.hostname)
+    servername: isIP(hostname)
       ? undefined
-      : url.hostname,
+      : hostname,
     rejectUnauthorized: false,
   }, () => {
     const raw = socket.getPeerCertificate().raw

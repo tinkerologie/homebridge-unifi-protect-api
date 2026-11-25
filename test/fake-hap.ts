@@ -45,7 +45,19 @@ export const C = {
  */
 export class FakeCharacteristic {
   value: unknown = null
+  /**
+   * HAP's stored status. A set handler that throws a HapStatusError leaves it
+   * set, and with no get handler every later read returns it ("No Response")
+   * until `updateValue` resets it. `hapSet` below models the throw side.
+   */
+  statusCode = 0
   setHandler?: (value: unknown) => unknown
+
+  updateValue(value: unknown) {
+    this.value = value
+    this.statusCode = 0
+    return this
+  }
 
   onSet(handler: (value: unknown) => unknown) {
     this.setHandler = handler
@@ -75,7 +87,8 @@ export class FakeService {
   }
 
   updateCharacteristic(type: object, value: unknown) {
-    this.getCharacteristic(type).value = value
+    // Real HAP routes this through Characteristic.updateValue.
+    this.getCharacteristic(type).updateValue(value)
     return this
   }
 
@@ -92,7 +105,14 @@ export class FakeService {
  * which is what `camera.ts`'s removal loop has to leave alone.
  */
 export class FakeCameraController {
+  /** Session ids the plugin asked HAP to end, in order. */
+  readonly forceStopped: string[] = []
+
   constructor(public readonly options: Record<string, unknown>) {}
+
+  forceStopStreamingSession(sessionId: string): void {
+    this.forceStopped.push(sessionId)
+  }
 
   constructServices(): FakeService[] {
     const count = (this.options.cameraStreamCount as number | undefined) ?? 1
@@ -160,6 +180,25 @@ export class FakeHapStatusError extends Error {
   constructor(public hapStatus: number) {
     super(`hap status ${hapStatus}`)
   }
+}
+
+/**
+ * A write the way HAP-NodeJS handles it: run the set handler, then commit the
+ * written value on success, or store the HapStatusError's status on failure.
+ * Resolves with the status, so a test can check what a later read would see.
+ */
+export async function hapSet(characteristic: FakeCharacteristic, value: unknown): Promise<number> {
+  try {
+    await characteristic.setHandler!(value)
+    characteristic.value = value
+    characteristic.statusCode = 0
+  }
+  catch (error) {
+    characteristic.statusCode = error instanceof FakeHapStatusError
+      ? error.hapStatus
+      : -70402
+  }
+  return characteristic.statusCode
 }
 
 /** The `api.hap` shape `camera.ts` and `platform.ts` read. */

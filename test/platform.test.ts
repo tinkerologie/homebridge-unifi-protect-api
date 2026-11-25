@@ -516,7 +516,53 @@ describe('uniFiProtectPlatform', () => {
     expect(excluded.platform.accessories.size).toBe(0)
   })
 
-  // C1: a discovery that "succeeds" with an empty inventory must never be
+  // HAP restores cached characteristic values; the tracker starts empty, so
+  // nothing would ever clear a sensor that was detected at shutdown.
+  it('clears tracker-owned sensors on cached camera accessories at startup', () => {
+    const { platform } = makePlatform()
+    const cam = new FakePlatformAccessory('Driveway', 'uuid-cam1')
+    cam.context.device = { id: 'cam1', modelKey: 'camera' }
+    const motion = cam.addService(S.MotionSensor, 'Motion', 'motion').setCharacteristic(C.MotionDetected, true)
+    const person = cam.addService(S.MotionSensor, 'Person', 'detect-person').setCharacteristic(C.MotionDetected, true)
+    const smoke = cam.addService(S.SmokeSensor, 'Smoke', 'audio-alrmSmoke').setCharacteristic(C.SmokeDetected, C.SmokeDetected.SMOKE_DETECTED)
+    // A light's PIR sensor is live device state, re-read at discovery — not the tracker's.
+    const light = new FakePlatformAccessory('Porch', 'uuid-light1')
+    light.context.device = { id: 'light1', modelKey: 'light' }
+    const pir = light.addService(S.MotionSensor, 'Motion', 'light-motion').setCharacteristic(C.MotionDetected, true)
+
+    platform.configureAccessory(cam as never)
+    platform.configureAccessory(light as never)
+
+    expect(motion.valueOf_(C.MotionDetected)).toBe(false)
+    expect(person.valueOf_(C.MotionDetected)).toBe(false)
+    expect(smoke.valueOf_(C.SmokeDetected)).toBe(C.SmokeDetected.SMOKE_NOT_DETECTED)
+    expect(pir.valueOf_(C.MotionDetected)).toBe(true)
+    expect(platform.accessories.size).toBe(2)
+  })
+
+  // A throw from configureAccessory fails Homebridge's whole cache restore for
+  // the plugin. A damaged cached accessory must cost a warning, nothing more.
+  it('keeps a cached camera whose sensors cannot be cleared, with a warning', () => {
+    const { platform } = makePlatform()
+    const damaged = {
+      UUID: 'uuid-damaged',
+      displayName: 'Damaged',
+      context: {
+        device: { id: 'cam9', modelKey: 'camera' },
+      },
+      get services(): never {
+        throw new Error('corrupt cache entry')
+      },
+    }
+    log.warn.mockClear()
+
+    expect(() => platform.configureAccessory(damaged as never)).not.toThrow()
+
+    expect(platform.accessories.get('uuid-damaged')).toBe(damaged)
+    expect(JSON.stringify(log.warn.mock.calls)).toContain('Damaged')
+    expect(JSON.stringify(log.warn.mock.calls)).toContain('corrupt cache entry')
+  })
+
   // treated as authoritative — that path deleted every accessory irreversibly.
   it('keeps accessories when a successful discovery returns nothing at all', async () => {
     const { api, platform } = makePlatform(validConfig, [
@@ -1831,6 +1877,14 @@ describe('uniFiProtectPlatform', () => {
     expect(probe).toHaveBeenCalledTimes(1)
   })
 
+  it('attaches each camera controller to its own delegate so a dead ffmpeg can end the HomeKit session', async () => {
+    const { accessories } = await withCameras()
+    for (const accessory of accessories) {
+      const controller = controllerOf(accessory)
+      expect((delegateOf(accessory) as unknown as { controller: unknown }).controller, accessory.displayName).toBe(controller)
+    }
+  })
+
   it('gives every camera exactly one bridged CameraController, and never a second one', async () => {
     const { api, platform, accessories } = await withCameras()
 
@@ -2385,6 +2439,7 @@ describe('uniFiProtectPlatform', () => {
     // And still exactly one controller on the package accessory — a second
     // would duplicate every stream management service on it.
     expect(packageOf(accessories)!.controllers).toHaveLength(1)
+    expect((delegateOf(packageOf(accessories)!) as unknown as { controller: unknown }).controller).toBe(controllerOf(packageOf(accessories)!))
   })
 
   // Nothing in the console inventory carries the package UUID, so the removal

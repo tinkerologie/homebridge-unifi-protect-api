@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ProtectClient } from '../src/protect/client.js'
 import {
   ProtectAuthError,
+  ProtectConflictError,
   ProtectError,
   ProtectNotFoundError,
   ProtectRateLimitError,
@@ -361,5 +362,150 @@ describe('protectClient snapshots', () => {
     expect(http.mock.calls[0]![0]).toBe(
       'https://192.168.1.1/proxy/protect/integration/v1/cameras/cam1/snapshot',
     )
+  })
+})
+
+/** A client whose queue retries freely and without sleeping, so the per-request policy is what decides. */
+function retryingHarness(responder: HttpRequestFn) {
+  const http = vi.fn(responder)
+  const client = new ProtectClient({
+    host: '192.168.1.1',
+    apiKey: API_KEY,
+    httpRequest: http as unknown as HttpRequestFn,
+    consoleCert: 'TRUSTED-PEM',
+    queue: { maxRetries: 3, baseDelayMs: 0 },
+  })
+  return { client, http }
+}
+
+const timedOut: HttpRequestFn = async () => {
+  throw new Error('Request timed out')
+}
+
+describe('protectClient request budgets', () => {
+  it('gives a snapshot a short timeout and a single retry', async () => {
+    const { client, http } = retryingHarness(timedOut)
+
+    await expect(client.getSnapshot('cam1')).rejects.toBeInstanceOf(ProtectUnavailableError)
+
+    expect(http).toHaveBeenCalledTimes(2)
+    expect(http.mock.calls[0]![1]!.timeoutMs).toBeLessThanOrEqual(5000)
+  })
+
+  it('keeps the long timeout and the full retry budget for discovery', async () => {
+    const { client, http } = retryingHarness(timedOut)
+
+    await expect(client.getCameras()).rejects.toBeInstanceOf(ProtectUnavailableError)
+
+    expect(http).toHaveBeenCalledTimes(4)
+    expect(http.mock.calls[0]![1]!.timeoutMs).toBe(15_000)
+  })
+
+  it.each([
+    [
+      'patchCamera',
+      (c: ProtectClient) => c.patchCamera('cam1', {
+        ledSettings: { isEnabled: false },
+      }),
+    ],
+    [
+      'patchLight',
+      (c: ProtectClient) => c.patchLight('light1', { isLightForceEnabled: true }),
+    ],
+    [
+      'patchChime',
+      (c: ProtectClient) => c.patchChime('chime1', { volume: 30 }),
+    ],
+  ])('%s fails inside the window HomeKit waits for a set handler, retries included', async (_name, write) => {
+    // HAP abandons a set handler after 9 s; the whole write — every attempt and
+    // backoff — must fail first, with time left to become a HapStatusError.
+    vi.useFakeTimers({
+      toFake: [
+        'setTimeout',
+        'clearTimeout',
+        'performance',
+        'Date',
+      ],
+    })
+    try {
+      // A console that never answers: each attempt runs to its full timeout.
+      const http = vi.fn<HttpRequestFn>((_url, options) => new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error('Request timed out')), options!.timeoutMs)
+      }))
+      const client = new ProtectClient({
+        host: '192.168.1.1',
+        apiKey: API_KEY,
+        httpRequest: http,
+        consoleCert: 'TRUSTED-PEM',
+        queue: { maxRetries: 3, baseDelayMs: 500 },
+      })
+      const started = performance.now()
+      let settledAt: number | undefined
+      const outcome = write(client).catch((error: unknown) => {
+        settledAt = performance.now()
+        return error
+      })
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(await outcome).toBeInstanceOf(ProtectUnavailableError)
+      expect(settledAt! - started).toBeLessThanOrEqual(7000)
+      expect(http.mock.calls[0]![1]!.timeoutMs).toBeLessThanOrEqual(5000)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    [
+      'createTalkbackSession',
+      (c: ProtectClient) => c.createTalkbackSession('cam1'),
+    ],
+    [
+      'createRtspsStream',
+      (c: ProtectClient) => c.createRtspsStream('cam1', ['high']),
+    ],
+  ])('never retries %s after a timeout, which may have reached the console', async (_name, call) => {
+    const { client, http } = retryingHarness(timedOut)
+
+    await expect(call(client)).rejects.toBeInstanceOf(ProtectUnavailableError)
+
+    expect(http).toHaveBeenCalledTimes(1)
+  })
+
+  it('never retries a POST the console answered with a 5xx', async () => {
+    const { client, http } = retryingHarness(async () => jsonResponse({}, 503))
+
+    await expect(client.createTalkbackSession('cam1')).rejects.toBeInstanceOf(ProtectUnavailableError)
+
+    expect(http).toHaveBeenCalledTimes(1)
+  })
+
+  it('still retries a POST the console rate-limited, because a 429 was not acted on', async () => {
+    let calls = 0
+    const { client, http } = retryingHarness(async () => {
+      calls++
+      return calls === 1
+        ? jsonResponse({}, 429)
+        : jsonResponse({
+            url: 'rtp://192.0.2.1:7004',
+            codec: 'opus',
+            samplingRate: 24000,
+            bitsPerSample: 16,
+          })
+    })
+
+    await client.createTalkbackSession('cam1')
+
+    expect(http).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('protectClient talkback conflicts', () => {
+  it('maps a 409 on talkback-session to ProtectConflictError, without retrying', async () => {
+    const { client, http } = retryingHarness(async () => jsonResponse({ error: 'busy' }, 409))
+
+    await expect(client.createTalkbackSession('cam1')).rejects.toBeInstanceOf(ProtectConflictError)
+
+    expect(http).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,5 +1,5 @@
 import type { HttpRequestFn } from './http.js'
-import type { RequestQueueOptions } from './queue.js'
+import type { RequestQueueOptions, RunPolicy } from './queue.js'
 import type { ChannelQuality, SnapshotChannel } from './schemas.js'
 import { Buffer } from 'node:buffer'
 import { z } from 'zod'
@@ -7,6 +7,7 @@ import { API_BASE_PATH } from '../settings.js'
 import {
   errorMessage,
   ProtectAuthError,
+  ProtectConflictError,
   ProtectError,
   ProtectNotFoundError,
   ProtectRateLimitError,
@@ -60,6 +61,39 @@ const metaInfoSchema = z.looseObject({
 })
 
 export type { ChannelQuality, SnapshotChannel } from './schemas.js'
+
+/** What one request may spend. Unset fields fall back to the client and queue defaults. */
+interface RequestPolicy extends RunPolicy {
+  /** Per-attempt transport timeout, capped by the client's own `timeoutMs`. */
+  timeoutMs?: number
+}
+
+/**
+ * HomeKit shows a tile's last image when a snapshot fails, but the request
+ * itself is abandoned at ~25 s — and while it waits it holds a queue slot that a
+ * write or another camera's tile needs. A slow snapshot is a stale snapshot:
+ * fail fast, retry once, and let the delegate serve its cached JPEG.
+ */
+const SNAPSHOT_POLICY: RequestPolicy = { timeoutMs: 5_000, maxRetries: 1, deadlineMs: 10_000 }
+
+/**
+ * HAP abandons a set handler 9 s after it is called (`TIMEOUT_WARNING` +
+ * `TIMEOUT_AFTER_WARNING`) and shows No Response. Bounding the whole write,
+ * queue wait included, to 7 s makes it fail FIRST, so the handler's
+ * HapStatusError is what HomeKit sees — and a write HomeKit has already given
+ * up on is not left holding a slot.
+ */
+const WRITE_POLICY: RequestPolicy = { timeoutMs: 5_000, deadlineMs: 7_000 }
+
+/**
+ * Not idempotent: each POST opens a session or a stream on the console. After a
+ * timeout, a dropped connection or a 5xx the console may well have acted on it,
+ * so a retry would open a second one. Only a 429 — the console explicitly
+ * refusing to act — is safe to send again.
+ */
+const CREATE_POLICY: RequestPolicy = {
+  retryable: error => error instanceof ProtectRateLimitError,
+}
 
 export class ProtectClient {
   private readonly baseUrl: string
@@ -133,27 +167,28 @@ export class ProtectClient {
   /** Enables streams for the given qualities. Different response schema to the GET. */
   async createRtspsStream(id: string, qualities: ChannelQuality[]): Promise<z.infer<typeof createdRtspsStreamsSchema>> {
     const path = `/v1/cameras/${encodeURIComponent(id)}/rtsps-stream`
-    return this.validate(createdRtspsStreamsSchema, await this.getJson(path, 'POST', { qualities }), path)
+    return this.validate(createdRtspsStreamsSchema, await this.getJson(path, 'POST', { qualities }, CREATE_POLICY), path)
   }
 
+  /** Rejects with ProtectConflictError (409) while another talkback session is in progress. */
   async createTalkbackSession(id: string): Promise<z.infer<typeof talkbackSessionSchema>> {
     const path = `/v1/cameras/${encodeURIComponent(id)}/talkback-session`
-    return this.validate(talkbackSessionSchema, await this.getJson(path, 'POST'), path)
+    return this.validate(talkbackSessionSchema, await this.getJson(path, 'POST', undefined, CREATE_POLICY), path)
   }
 
   async patchCamera(id: string, patch: Record<string, unknown>): Promise<z.infer<typeof cameraSchema>> {
     const path = `/v1/cameras/${encodeURIComponent(id)}`
-    return this.validate(cameraSchema, await this.getJson(path, 'PATCH', patch), path)
+    return this.validate(cameraSchema, await this.getJson(path, 'PATCH', patch, WRITE_POLICY), path)
   }
 
   async patchLight(id: string, patch: Record<string, unknown>): Promise<z.infer<typeof lightSchema>> {
     const path = `/v1/lights/${encodeURIComponent(id)}`
-    return this.validate(lightSchema, await this.getJson(path, 'PATCH', patch), path)
+    return this.validate(lightSchema, await this.getJson(path, 'PATCH', patch, WRITE_POLICY), path)
   }
 
   async patchChime(id: string, patch: Record<string, unknown>): Promise<z.infer<typeof chimeSchema>> {
     const path = `/v1/chimes/${encodeURIComponent(id)}`
-    return this.validate(chimeSchema, await this.getJson(path, 'PATCH', patch), path)
+    return this.validate(chimeSchema, await this.getJson(path, 'PATCH', patch, WRITE_POLICY), path)
   }
 
   /** Raw `image/jpeg` bytes — never JSON-parsed. */
@@ -166,7 +201,7 @@ export class ProtectClient {
     const suffix = query.size > 0
       ? `?${query.toString()}`
       : ''
-    const response = await this.send(`/v1/cameras/${encodeURIComponent(id)}/snapshot${suffix}`)
+    const response = await this.send(`/v1/cameras/${encodeURIComponent(id)}/snapshot${suffix}`, 'GET', undefined, SNAPSHOT_POLICY)
     return response.body
   }
 
@@ -214,8 +249,8 @@ export class ProtectClient {
     this.log.warn(this.redact(message))
   }
 
-  private async getJson(path: string, method = 'GET', body?: unknown): Promise<unknown> {
-    const response = await this.send(path, method, body)
+  private async getJson(path: string, method = 'GET', body?: unknown, policy: RequestPolicy = {}): Promise<unknown> {
+    const response = await this.send(path, method, body, policy)
     if (response.body.length === 0)
       return undefined
     try {
@@ -229,11 +264,13 @@ export class ProtectClient {
     }
   }
 
-  private send(path: string, method = 'GET', body?: unknown) {
+  private send(path: string, method = 'GET', body?: unknown, policy: RequestPolicy = {}) {
     const payload = body === undefined
       ? undefined
       : JSON.stringify(body)
-    return this.queue.run(async () => {
+    return this.queue.run(async (remainingMs) => {
+      // At least 1 ms: node treats a socket timeout of 0 as "no timeout at all".
+      const timeoutMs = Math.max(1, Math.min(this.timeoutMs, policy.timeoutMs ?? Infinity, remainingMs ?? Infinity))
       let response
       try {
         response = await this.httpRequest(`${this.baseUrl}${path}`, {
@@ -249,7 +286,7 @@ export class ProtectClient {
                 }),
           },
           body: payload,
-          timeoutMs: this.timeoutMs,
+          timeoutMs,
           consoleCert: this.consoleCert,
         })
       }
@@ -266,7 +303,7 @@ export class ProtectClient {
       if (response.status >= 200 && response.status < 300)
         return response
       throw this.toError(response.status, response.headers, method, path)
-    })
+    }, policy)
   }
 
   private toError(status: number, headers: NodeJS.Dict<string | string[]>, method: string, path: string): ProtectError {
@@ -277,6 +314,8 @@ export class ProtectClient {
         return new ProtectAuthError(`${where}: rejected (${status}). Check the API key in UniFi Site Manager → Integrations.`)
       case 404:
         return new ProtectNotFoundError(`${where}: not found (404)`)
+      case 409:
+        return new ProtectConflictError(`${where}: conflict (409) — already in progress`)
       case 429:
         return new ProtectRateLimitError(`${where}: rate limited (429)`, retryAfterMs(headers['retry-after']))
       default:

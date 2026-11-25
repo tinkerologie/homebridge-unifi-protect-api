@@ -1,8 +1,28 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { dirname, join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import { parseConfig, settingsFor, storeConsoleCert } from '../src/config.js'
+
+// Passthrough, so storeConsoleCert's rename can be made to fail on demand.
+const fsFaults = vi.hoisted(() => ({ failRename: false, failChown: false, chowns: [] as [number, number][] }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      if (fsFaults.failRename)
+        throw new Error('EIO: rename failed')
+      return actual.renameSync(...args)
+    },
+    fchownSync: (fd: number, uid: number, gid: number) => {
+      fsFaults.chowns.push([uid, gid])
+      if (fsFaults.failChown)
+        throw Object.assign(new Error('EPERM: operation not permitted, fchown'), { code: 'EPERM' })
+      return actual.fchownSync(fd, uid, gid)
+    },
+  }
+})
 
 const minimal = {
   platform: 'UniFiProtect',
@@ -12,6 +32,11 @@ const minimal = {
 }
 
 describe('parseConfig', () => {
+  it('rejects an api key with characters that cannot be sent in a header', () => {
+    const result = parseConfig({ ...minimal, apiKey: 'secret\u200Bkey' })
+    expect(result.success).toBe(false)
+  })
+
   it('rejects a config with no host', () => {
     const result = parseConfig({ platform: 'UniFiProtect', apiKey: 'k' })
     expect(result.success).toBe(false)
@@ -427,5 +452,98 @@ describe('storeConsoleCert', () => {
 
     expect(() => storeConsoleCert(path, '10.0.0.1', 'PEM')).toThrow(/10\.0\.0\.1/)
     expect(read(path).platforms.some((block: { consoleCert?: string }) => block.consoleCert)).toBe(false)
+  })
+
+  // A crash mid-write must never leave a truncated config.json: Homebridge
+  // cannot start without it.
+  it('replaces config.json atomically, keeping its mode and leaving no temp file', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    chmodSync(path, 0o666)
+    const before = statSync(path)
+
+    storeConsoleCert(path, '10.0.0.1', 'PEM')
+
+    const after = statSync(path)
+    // A new inode: the file was renamed over, not rewritten in place.
+    expect(after.ino).not.toBe(before.ino)
+    expect(after.mode & 0o777).toBe(0o666)
+    expect(readdirSync(dirname(path))).toEqual(['config.json'])
+    expect(read(path).platforms[0].consoleCert).toBe('PEM')
+  })
+
+  // Docker and NAS setups often symlink config.json to a mounted volume. The
+  // rename must replace the file the link points at, never the link itself.
+  it('updates the target of a symlinked config.json and keeps the link', () => {
+    const root = mkdtempSync(join(tmpdir(), 'protect-config-link-'))
+    mkdirSync(join(root, 'volume'))
+    const target = join(root, 'volume', 'config.json')
+    writeFileSync(target, JSON.stringify({
+      platforms: [minimal],
+    }))
+    const link = join(root, 'config.json')
+    symlinkSync(target, link)
+
+    storeConsoleCert(link, '10.0.0.1', 'PEM')
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(read(target).platforms[0].consoleCert).toBe('PEM')
+    expect(readdirSync(join(root, 'volume'))).toEqual(['config.json'])
+  })
+
+  // A 0640 config.json with a private group must not become readable by the
+  // process's own group: the replacement takes the original owner and group
+  // before it gets the original mode or any data.
+  it('gives the replacement the original owner and group', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    const { uid, gid } = statSync(path)
+    fsFaults.chowns.length = 0
+
+    storeConsoleCert(path, '10.0.0.1', 'PEM')
+
+    expect(fsFaults.chowns).toEqual([
+      [uid, gid],
+    ])
+    expect(statSync(path).uid).toBe(uid)
+    expect(statSync(path).gid).toBe(gid)
+  })
+
+  it('leaves the original untouched when its owner and group cannot be kept', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    const original = readFileSync(path, 'utf8')
+
+    fsFaults.failChown = true
+    try {
+      expect(() => storeConsoleCert(path, '10.0.0.1', 'PEM')).toThrow(/EPERM/)
+    }
+    finally {
+      fsFaults.failChown = false
+    }
+
+    expect(readFileSync(path, 'utf8')).toBe(original)
+    expect(readdirSync(dirname(path))).toEqual(['config.json'])
+  })
+
+  it('leaves the original untouched and cleans up when the replace fails', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    const original = readFileSync(path, 'utf8')
+
+    fsFaults.failRename = true
+    try {
+      expect(() => storeConsoleCert(path, '10.0.0.1', 'PEM')).toThrow(/rename failed/)
+    }
+    finally {
+      fsFaults.failRename = false
+    }
+
+    expect(readFileSync(path, 'utf8')).toBe(original)
+    expect(readdirSync(dirname(path))).toEqual(['config.json'])
   })
 })

@@ -161,6 +161,28 @@ describe('httpsRequestFn', () => {
     await expect(httpsRequestFn(`${peer.base}/thing`, { consoleCert: real.cert })).rejects.toThrow()
   })
 
+  // req.setTimeout is an IDLE timer: a peer that trickles bytes resets it on
+  // every chunk. The deadline must be absolute, or the write budget means
+  // nothing against a slow console.
+  it('times out at the deadline even when the server keeps sending data', async () => {
+    let trickle: ReturnType<typeof setInterval> | undefined
+    const peer = await serve(real, (_req, res) => {
+      res.writeHead(200)
+      trickle = setInterval(() => res.write('.'), 20)
+      res.on('close', () => clearInterval(trickle))
+    })
+    const started = performance.now()
+    try {
+      await expect(httpsRequestFn(`${peer.base}/thing`, { timeoutMs: 150, consoleCert: real.cert }))
+        .rejects
+        .toThrow('Request timed out')
+      expect(performance.now() - started).toBeLessThan(1_000)
+    }
+    finally {
+      clearInterval(trickle)
+    }
+  })
+
   it('rejects via timeout rather than hanging when the server never responds', async () => {
     // Handler deliberately never calls res.end().
     const peer = await serve(real, () => {})

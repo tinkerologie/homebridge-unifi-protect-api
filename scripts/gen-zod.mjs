@@ -3,7 +3,7 @@
 // OpenAPI 3.1 schemas ARE JSON Schema, so this mapping is mechanical.
 import { readFileSync, writeFileSync } from 'node:fs'
 
-const SPEC = 'spec/protect-7.3.70.openapi.json'
+const SPEC = 'spec/protect-7.4.102.openapi.json'
 const OUT = 'src/protect/schemas.ts'
 
 const spec = JSON.parse(readFileSync(SPEC, 'utf8'))
@@ -30,6 +30,11 @@ const OPTIONAL_OVERRIDES = {
   // marks camera.lcdMessage required, but /cameras omits it unless a doorbell
   // message is currently set. Honouring the spec would reject genuine payloads.
   camera: ['lcdMessage'],
+  // Added (and marked required) in the 7.4.102 contract. Consoles on 7.3.x
+  // (live 7.3.74, 2026-11-25) do not send them; requiring them would reject
+  // every sensor and NVR payload from a console that has not upgraded yet.
+  sensor: ['isMountedIncorrectly'],
+  nvr: ['featureFlags'],
 }
 const usedOverrides = new Set()
 
@@ -64,6 +69,7 @@ const HANDLED = new Set([
   'minItems',
   'maxItems',
   'pattern',
+  'minProperties',
 ])
 /** Documentation only — no effect on validation. */
 const IGNORED = new Set([
@@ -243,9 +249,17 @@ function objectOf(node, name, isComponent = false) {
     // rather than quietly dropping it.
     if (entries.length)
       throw new Error(`gen-zod: ${node.title ?? name} declares both properties and a schema-valued additionalProperties — z.record() cannot carry the properties. Teach the generator this shape.`)
+    if (node.minProperties !== undefined)
+      throw new Error(`gen-zod: ${node.title ?? name} combines minProperties with a schema-valued additionalProperties. Teach the generator this shape.`)
     return `z.record(z.string(), ${convert(node.additionalProperties, name)})`
   }
-  return body
+  // JSON Schema counts every own key, declared or not — the same thing
+  // Object.keys sees on the loose object zod returns.
+  return node.minProperties === undefined
+    ? body
+    : `${body}.refine(value => Object.keys(value).length >= ${node.minProperties}, { message: ${lit(`Expected at least ${node.minProperties} propert${node.minProperties === 1
+      ? 'y'
+      : 'ies'}`)} })`
 }
 
 /**

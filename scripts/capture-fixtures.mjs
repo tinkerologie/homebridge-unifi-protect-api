@@ -30,12 +30,14 @@ if (expected.length !== 64) {
 
 const pinned = await new Promise((resolve, reject) => {
   const url = new URL(`https://${host}`)
+  // WHATWG keeps IPv6 brackets in `hostname`; the resolver and isIP need them gone.
+  const hostname = url.hostname.replace(/^\[(.*)\]$/, '$1')
   const socket = connect({
-    host: url.hostname,
+    host: hostname,
     port: Number(url.port || 443),
-    servername: isIP(url.hostname)
+    servername: isIP(hostname)
       ? undefined
-      : url.hostname,
+      : hostname,
     rejectUnauthorized: false,
   }, () => {
     const raw = socket.getPeerCertificate().raw

@@ -1,5 +1,6 @@
 import type { API, Logging, PlatformAccessory, Service } from 'homebridge'
 import { errorMessage } from '../protect/errors.js'
+import { writeFailure } from './write-failure.js'
 
 /**
  * Writes a Protect Light makes back to the console. `on` maps to
@@ -142,7 +143,7 @@ function wireOnOff(
       log.warn(`Could not switch the light "${label}": ${errorMessage(error)}`)
       // Throw so HomeKit reverts the switch — a normal return tells HAP the
       // write succeeded and it commits the value the console rejected.
-      throw new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
+      throw writeFailure(api, characteristic)
     }
   })
 }
@@ -168,7 +169,7 @@ function wireBrightness(
     }
     catch (error) {
       log.warn(`Could not set the brightness on "${label}": ${errorMessage(error)}`)
-      throw new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)
+      throw writeFailure(api, characteristic)
     }
   })
 }

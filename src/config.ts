@@ -1,4 +1,7 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { closeSync, fchmodSync, fchownSync, fsyncSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import process from 'node:process'
 import { z } from 'zod'
 import { PLATFORM_NAME } from './settings.js'
 
@@ -54,7 +57,10 @@ export const configSchema = z.object({
   host: z.string({ error: 'host is required — the IP or hostname of your UniFi console' })
     .min(1, 'host is required — the IP or hostname of your UniFi console'),
   apiKey: z.string({ error: 'apiKey is required — create one in UniFi Site Manager → Integrations' })
-    .min(1, 'apiKey is required — create one in UniFi Site Manager → Integrations'),
+    .min(1, 'apiKey is required — create one in UniFi Site Manager → Integrations')
+    // Sent as a header value. Anything outside printable ASCII fails there as a
+    // misleading network error, so report it here as the config error it is.
+    .regex(/^[\u0020-\u007E]+$/, 'apiKey contains invalid characters — paste it again from UniFi Site Manager → Integrations'),
   defaults: defaultsSchema,
   /**
    * PEM of the console certificate this install trusts, written on first
@@ -147,7 +153,51 @@ export function storeConsoleCert(configPath: string, host: string, pem: string):
     throw new Error(`no ${PLATFORM_NAME} platform block for ${host} in ${configPath}`)
   block.consoleCert = pem
   // 4 spaces — what Homebridge itself writes, so this does not reformat the file.
-  writeFileSync(configPath, `${JSON.stringify(raw, null, 4)}\n`)
+  writeFileAtomic(configPath, `${JSON.stringify(raw, null, 4)}\n`)
+}
+
+/**
+ * Replaces a file without ever leaving it half-written: a crash or power loss
+ * mid-write would otherwise truncate config.json and Homebridge could not start.
+ * The temp file sits in the same directory so the rename stays on one
+ * filesystem (and so is atomic), and takes the original's mode so a
+ * deliberately private config.json stays private.
+ */
+function writeFileAtomic(path: string, data: string): void {
+  // Through any symlink: Docker and NAS setups often link config.json to a
+  // mounted volume, and renaming over the link would replace it with a file.
+  const target = realpathSync(path)
+  // Permission bits only. Copying setuid/setgid/sticky can make fchmod fail
+  // with EPERM for a non-root Homebridge user.
+  const original = statSync(target)
+  const mode = original.mode & 0o777
+  const temp = join(dirname(target), `.${basename(target)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`)
+  try {
+    // `wx`: never follow or reuse something already at the temp name. Owner
+    // only until it carries the original's owner and group: a new file takes
+    // the process's group, and applying a 0640 mode to that group could expose
+    // the API key to it.
+    const fd = openSync(temp, 'wx', 0o600)
+    try {
+      // Throws EPERM when the owner or group cannot be kept. The original is
+      // then left exactly as it was. (libuv makes this a no-op on Windows.)
+      fchownSync(fd, original.uid, original.gid)
+      // openSync's mode is filtered through the umask; set it exactly.
+      fchmodSync(fd, mode)
+      // writeFileSync loops until every byte is written; a single writeSync
+      // may write only part of the data on some filesystems.
+      writeFileSync(fd, data)
+      fsyncSync(fd)
+    }
+    finally {
+      closeSync(fd)
+    }
+    renameSync(temp, target)
+  }
+  catch (error) {
+    rmSync(temp, { force: true })
+    throw error
+  }
 }
 
 /** Device overrides layered over the global defaults. */
