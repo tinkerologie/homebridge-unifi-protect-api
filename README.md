@@ -7,15 +7,15 @@
 [![License](https://img.shields.io/github/license/tinkerologie/homebridge-unifi-protect-api)](./LICENSE)
 <!-- BADGES:END -->
 
-Bring UniFi Protect cameras into Apple Home using Ubiquiti's official Integration API.
+Use this plugin to show UniFi Protect cameras in Apple Home. The plugin uses the official Ubiquiti Integration API.
 
-## What it does
+## Features
 
 - Live video and snapshots
 - HomeKit Secure Video with pre-motion recording
 - Motion, smart detection, smoke, carbon monoxide, and doorbell sensors
-- Camera status LED control
-- Package-camera live view and snapshots
+- Control of the camera status LED
+- Live view and snapshots for the package camera
 - Optional camera audio and two-way talkback
 - Protect floodlights as a dimmable light with a motion sensor
 - Chime volume control as a HomeKit light
@@ -23,57 +23,61 @@ Bring UniFi Protect cameras into Apple Home using Ubiquiti's official Integratio
 ## Requirements
 
 - Homebridge 2
-- Node.js 22 or 24
+- Node.js 22.12 or later, 24, or 26
 - UniFi Protect with the Integration API enabled
 - ffmpeg
 
-Live API checks passed with UniFi Protect 7.3.70. Redacted test fixtures were
-captured on 7.2.105; generated schemas use the official 7.3.70 OpenAPI contract.
-Hardware video encoding is recommended for multiple cameras.
-For Intel GPUs on Linux, see [Docker GPU setup](docs/docker-intel-gpu.md).
+Live API checks passed with UniFi Protect 7.3.74. The redacted test fixtures
+come from Protect 7.2.105. The generated schemas use the official 7.4.102 OpenAPI contract.
+For more than one camera, use hardware video encoding.
+For Intel GPUs on Linux, refer to [Docker GPU setup](docs/docker-intel-gpu.md).
 
 ## Compatibility
 
-The [October 2026 compatibility audit](docs/compatibility-audit-2026-10.md) covers
-Homebridge 2, current Protect API contracts, deprecated APIs and TypeScript 7.
-The plugin retains TypeScript 6 for ESLint compiler-API compatibility; Homebridge
-runs compiled JavaScript.
+The [November 2026 compatibility audit](docs/compatibility-audit-2026-11.md) covers
+Homebridge 2.5, Node 26, the Protect 7.4.102 API contract, deprecated APIs and
+TypeScript 7. It updates the [October 2026 audit](docs/compatibility-audit-2026-10.md).
+The plugin keeps TypeScript 6 because ESLint uses the TypeScript 6 compiler API.
+Homebridge runs the compiled JavaScript.
 
 ## Installation
 
-1. Search for **Homebridge UniFi Protect** in the Homebridge UI and install it.
-2. Create an API key under **Integrations** in UniFi Site Manager.
-3. Enter the console address and API key in the plugin settings.
-4. Select **Test Connection**, save, and restart Homebridge (or the plugin's child bridge).
+1. In the Homebridge UI, search for **Homebridge UniFi Protect**.
+2. Install the plugin.
+3. In UniFi Site Manager, go to **Integrations** and create an API key.
+4. In the plugin settings, enter the console address and the API key.
+5. Select **Test Connection**.
+6. Save the settings.
+7. Restart Homebridge (or the child bridge of the plugin).
 
 ## Configuration
 
-Use **Defaults** for shared settings and **Devices** for camera-specific options. The device list
-appears after a successful connection test.
+Use **Defaults** for shared settings. Use **Devices** for the options of one camera.
+The device list shows after a successful connection test.
 
-The plugin remembers the console certificate after the first connection. If it changes later,
-the plugin refuses to connect until you deliberately trust the new certificate.
+The plugin keeps the console certificate after the first connection. If the certificate changes,
+the plugin does not connect until you trust the new certificate.
 
 ## HomeKit Secure Video
 
-HKSV is disabled by default. Enable it per camera or through the shared default,
-which individual cameras can override. It requires a supported iCloud+ plan
-and an Apple home hub (HomePod or Apple TV). Hardware video encoding is recommended when
-recording several cameras.
+HKSV is disabled by default. Enable it for each camera, or enable it in the shared default.
+A camera setting overrides the shared default. HKSV requires a supported iCloud+ plan
+and an Apple home hub (HomePod or Apple TV). To record from more than one camera,
+use hardware video encoding.
 
 ## Troubleshooting
 
-- **Connection or certificate error:** confirm the console address and API key. Trust a changed
-  certificate only when you can explain why it changed.
-- **Camera not responding:** confirm ffmpeg is installed and restart Homebridge (or the plugin's child bridge).
-- **High CPU usage:** enable hardware video encoding or reduce concurrent live views.
-- **Missing HKSV clips:** confirm HKSV is enabled for that camera, your Apple home hub is
-  configured, and your iCloud+ plan supports it.
-- **Blank device list:** select **Test Connection** first.
+- **Connection or certificate error:** Make sure that the console address and the API key are correct.
+  Trust a changed certificate only if you know why it changed.
+- **Camera does not respond:** Make sure that ffmpeg is installed. Then restart Homebridge (or the child bridge of the plugin).
+- **High CPU usage:** Enable hardware video encoding, or decrease the number of live views at the same time.
+- **HKSV clips are missing:** Make sure that HKSV is enabled for the camera.
+  Make sure that your Apple home hub is configured and that your iCloud+ plan supports HKSV.
+- **The device list is empty:** Select **Test Connection** first.
 
 ## Known limitations
 
-The official Integration API does not currently provide recording-mode control, privacy zones,
+At this time, the official Integration API does not supply recording-mode control, privacy zones,
 or event thumbnails.
 
 ## Support
