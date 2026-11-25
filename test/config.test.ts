@@ -1,8 +1,22 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { dirname, join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import { parseConfig, settingsFor, storeConsoleCert } from '../src/config.js'
+
+// Passthrough, so storeConsoleCert's rename can be made to fail on demand.
+const fsFaults = vi.hoisted(() => ({ failRename: false }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      if (fsFaults.failRename)
+        throw new Error('EIO: rename failed')
+      return actual.renameSync(...args)
+    },
+  }
+})
 
 const minimal = {
   platform: 'UniFiProtect',
@@ -427,5 +441,42 @@ describe('storeConsoleCert', () => {
 
     expect(() => storeConsoleCert(path, '10.0.0.1', 'PEM')).toThrow(/10\.0\.0\.1/)
     expect(read(path).platforms.some((block: { consoleCert?: string }) => block.consoleCert)).toBe(false)
+  })
+
+  // A crash mid-write must never leave a truncated config.json: Homebridge
+  // cannot start without it.
+  it('replaces config.json atomically, keeping its mode and leaving no temp file', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    chmodSync(path, 0o666)
+    const before = statSync(path)
+
+    storeConsoleCert(path, '10.0.0.1', 'PEM')
+
+    const after = statSync(path)
+    // A new inode: the file was renamed over, not rewritten in place.
+    expect(after.ino).not.toBe(before.ino)
+    expect(after.mode & 0o777).toBe(0o666)
+    expect(readdirSync(dirname(path))).toEqual(['config.json'])
+    expect(read(path).platforms[0].consoleCert).toBe('PEM')
+  })
+
+  it('leaves the original untouched and cleans up when the replace fails', () => {
+    const path = write({
+      platforms: [minimal],
+    })
+    const original = readFileSync(path, 'utf8')
+
+    fsFaults.failRename = true
+    try {
+      expect(() => storeConsoleCert(path, '10.0.0.1', 'PEM')).toThrow(/rename failed/)
+    }
+    finally {
+      fsFaults.failRename = false
+    }
+
+    expect(readFileSync(path, 'utf8')).toBe(original)
+    expect(readdirSync(dirname(path))).toEqual(['config.json'])
   })
 })

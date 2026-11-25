@@ -1,4 +1,7 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { closeSync, fchmodSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import process from 'node:process'
 import { z } from 'zod'
 import { PLATFORM_NAME } from './settings.js'
 
@@ -147,7 +150,37 @@ export function storeConsoleCert(configPath: string, host: string, pem: string):
     throw new Error(`no ${PLATFORM_NAME} platform block for ${host} in ${configPath}`)
   block.consoleCert = pem
   // 4 spaces — what Homebridge itself writes, so this does not reformat the file.
-  writeFileSync(configPath, `${JSON.stringify(raw, null, 4)}\n`)
+  writeFileAtomic(configPath, `${JSON.stringify(raw, null, 4)}\n`)
+}
+
+/**
+ * Replaces a file without ever leaving it half-written: a crash or power loss
+ * mid-write would otherwise truncate config.json and Homebridge could not start.
+ * The temp file sits in the same directory so the rename stays on one
+ * filesystem (and so is atomic), and takes the original's mode so a
+ * deliberately private config.json stays private.
+ */
+function writeFileAtomic(path: string, data: string): void {
+  const { mode } = statSync(path)
+  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`)
+  try {
+    // `wx`: never follow or reuse something already at the temp name.
+    const fd = openSync(temp, 'wx', mode & 0o7777)
+    try {
+      // openSync's mode is filtered through the umask; set it exactly.
+      fchmodSync(fd, mode & 0o7777)
+      writeSync(fd, data)
+      fsyncSync(fd)
+    }
+    finally {
+      closeSync(fd)
+    }
+    renameSync(temp, path)
+  }
+  catch (error) {
+    rmSync(temp, { force: true })
+    throw error
+  }
 }
 
 /** Device overrides layered over the global defaults. */
